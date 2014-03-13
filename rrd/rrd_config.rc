@@ -1,0 +1,3 @@
+RRD_PATH=$HOME/SD/rrd_home/
+GRAPH_PATH=/srv/http/home-monitoring-server
+
