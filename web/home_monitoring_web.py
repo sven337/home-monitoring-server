@@ -84,7 +84,7 @@ def report_gas_pulse(pulse):
 	last_gas_pulse = pulse
 
 	rrdtool.update(rrdfile("gas"), "N:" + str(pulse) + ":" + str(last_gas_index))
-	return "Got pulse " + str(pulse) + ", computed gas index " + str(last_gas_index)
+	return "Got pulse " + str(pulse) + ", computed gas index " + str(last_gas_index) + "\n"
 
 def report_gas_index(idx):
 	global last_gas_index
@@ -92,13 +92,13 @@ def report_gas_index(idx):
 	last_gas_index = idx
 	write_gas_index(idx)
 	rrdtool.update(rrdfile("gas"), "N:" + str(last_gas_pulse) + ":" + str(last_gas_index))
-	return "Set gas index to " + str(last_gas_index)
+	return "Set gas index to " + str(last_gas_index) + "\n"
 
 def report_elec(pwr, idx):
 	global last_electricity_power
 	last_electricity_power = int(pwr)
 	rrdtool.update(rrdfile("edf"), "N:" + str(pwr) + ":" + str(idx))
-	return "Reported electricity power " + str(pwr) + ", index " + str(idx)
+	return "Reported electricity power " + str(pwr) + ", index " + str(idx) + "\n"
 
 
 @app.route("/update/<feed_class>/<feed_data>")
