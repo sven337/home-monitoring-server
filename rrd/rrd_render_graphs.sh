@@ -55,6 +55,7 @@ graph_gas()
 
 export_temperature()
 {
+
 	MAXROWS="$4"
 	if [ -z "$MAXROWS" ]; then
 		MAXROWS=700
@@ -108,18 +109,45 @@ export_gas()
 
 create_composite_xml()
 {
-	echo Coalescing values into $1.xml
+	echo Coalescing values into $1.json
 	# Header
-	echo '<?xml version="1.0" encoding="ISO-8859-1"?>
-<xport>' > $GRAPH_PATH/$1.xml
-	egrep  '(meta|legend|entry)' $GRAPH_PATH/$1_day.xml >> $GRAPH_PATH/$1.xml
-	echo '<data>' >> $GRAPH_PATH/$1.xml
+
+	echo '[' > $GRAPH_PATH/$1.json
+
 	# Values
-	for i in year week day; do
-		egrep  '(<row>|<t>|<v>)' $GRAPH_PATH/$1_$i.xml  >> $GRAPH_PATH/$1.xml
-	done
-	echo '</data>
-</xport>' >> $GRAPH_PATH/$1.xml
+	# Day first
+	echo '{ 
+		"name": "'$2'",
+		"data": [' >> $GRAPH_PATH/$1.json
+
+	sed -n -e '/NaN/d' -e 's;.*<t>\(.*\)</t><v>\(.*\)</v>.*;\t[\1000, \2],;p' $GRAPH_PATH/$2.xml  >> $GRAPH_PATH/$1.json
+	truncate -s -2 $GRAPH_PATH/$1.json
+	echo ']}' >> $GRAPH_PATH/$1.json
+
+	# Week as a separate series
+	echo ', { 
+		"name": "'$3'",
+		"data": [' >> $GRAPH_PATH/$1.json
+
+	sed -n -e '/NaN/d' -e 's;.*<t>\(.*\)</t><v>\(.*\)</v>.*;\t[\1000, \2],;p' $GRAPH_PATH/$3.xml  >> $GRAPH_PATH/$1.json
+	truncate -s -2 $GRAPH_PATH/$1.json
+
+	echo ']}' >> $GRAPH_PATH/$1.json
+
+	if [ -n "$4" ]; then
+		# Year as a separate series
+		echo ', { 
+			"name": "'$4'",
+			"data": [' >> $GRAPH_PATH/$1.json
+
+		sed -n -e '/NaN/d' -e 's;.*<t>\(.*\)</t><v>\(.*\)</v>.*;\t[\1000, \2],;p' $GRAPH_PATH/$4.xml  >> $GRAPH_PATH/$1.json
+		truncate -s -2 $GRAPH_PATH/$1.json
+		echo ']}' >> $GRAPH_PATH/$1.json
+	fi
+
+
+	# Close	
+	echo ']' >> $GRAPH_PATH/$1.json
 
 }
 
@@ -143,16 +171,15 @@ if [ "$1" != "--xml" ]; then
 	graph_gas gas_month -1m
 	graph_gas gas_year -1y
 else 
-	export_temperature temperature_day -1y now
-	export_temperature temperature_week -1w -1d 
-	export_temperature temperature_year -1y -1w 10000
-	create_composite_xml temperature
-	export_edf edf_day -2w now
-	export_edf edf_week -1w -1d
-	export_edf edf_year -1y -1w 10000
-	create_composite_xml edf
+	export_temperature temperature_5min -300d now 100000
+	export_temperature temperature_day -369d -1d 
+	create_composite_xml temperature temperature_5min temperature_day
+	export_edf edf_1min -2w now 10000
+	export_edf edf_1hour -30w now 10000
+	export_edf edf_day -2y now
+	create_composite_xml edf edf_1min edf_1hour edf_day
 	export_gas gas_day -1w now
 	export_gas gas_week -1w -1d
 	export_gas gas_year -1y -1w 10000
-	create_composite_xml gas
+	create_composite_xml gas gas_day gas_week gas_year
 fi
