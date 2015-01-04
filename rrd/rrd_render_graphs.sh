@@ -143,15 +143,15 @@ if [ "$1" != "--xml" ]; then
 	graph_gas gas_month -1m
 	graph_gas gas_year -1y
 else 
-	export_temperature temperature_day -1d now
+	export_temperature temperature_day -1y now
 	export_temperature temperature_week -1w -1d 
 	export_temperature temperature_year -1y -1w 10000
 	create_composite_xml temperature
-	export_edf edf_day -1d now
+	export_edf edf_day -2w now
 	export_edf edf_week -1w -1d
 	export_edf edf_year -1y -1w 10000
 	create_composite_xml edf
-	export_gas gas_day -1d now
+	export_gas gas_day -1w now
 	export_gas gas_week -1w -1d
 	export_gas gas_year -1y -1w 10000
 	create_composite_xml gas
