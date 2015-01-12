@@ -1,0 +1,311 @@
+<!DOCTYPE HTML>
+    <html>
+        <head>
+            <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+            <title>T'en perds ta ceinture et ta moustache</title>
+            <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
+            <script type="text/javascript">
+            $(function () {
+				function get_series(xml) {
+					var series = []
+					//define series
+					$(xml).find("entry").each(function() {
+						var seriesOptions = {
+							name: $(this).text(),
+							data: []
+						};
+						series.push(seriesOptions);
+					});
+					
+					//populate with data
+					$(xml).find("row").each(function() {
+						var t = parseInt($(this).find("t").text()) * 1000
+
+						$(this).find("v").each(function(index) {
+							var v = parseFloat($(this).text())
+							v = v || null
+							if (v != null) {
+							series[index].data.push([t, v])
+							};
+							});
+						});
+					return series
+				}
+
+				function parse_xml(xml, options) {
+						var series = get_series(xml, options)
+
+						$.each(series, function(index) {
+							options.series.push(series[index]);
+						});
+						chart = new Highcharts.Chart(options);
+				}
+
+                var chart;
+                $(document).ready(function() {
+					var x = new Date();
+					Highcharts.setOptions({
+global: {
+timezoneOffset: x.getTimezoneOffset()
+}
+});
+					function UpdateTempAvg(){
+						var TotTemp=0;
+						var TotValues=0;
+						var AvgTemp;
+						var series_index = 0;
+
+						extremes = this.xAxis[0].getExtremes();
+
+						if (this.series[0].xData[0] > extremes.min) {
+							// If high-resolution series isn't available for the full duration, use lower-res
+							series_index = 1;
+						}
+						for (var i = 0; i < this.series[series_index].yData.length; i++) {
+							if (this.series[series_index].xData[i] > extremes.max) {
+								break;
+							}
+							if (this.series[series_index].xData[i] >= extremes.min) {
+								TotTemp += this.series[series_index].yData[i];
+								TotValues += 1;
+							}
+						} 
+						AvgTemp = (TotTemp / TotValues).toFixed(1); // fix decimal to 4    places
+
+						var resolution_report;
+						if (series_index == 0) {
+							resolution_report = " (high-res)";
+						} else resolution_report = " (low-res)";
+
+//						$('#temp_report').html("<b>Avg. Temp.: </b> " + AvgTemp + "°C" + resolution_report + "<br/>");
+
+						this.yAxis[0].removePlotBand('moy-temp');
+						// Affichage dans le graphe
+						this.yAxis[0].addPlotLine({
+	color: '#B5E61D',
+	width: 2,
+	value: AvgTemp,
+	dashStyle: 'Dash',
+	id:'moy-temp',
+	label: {
+		text: "Avg.Temp.:" + AvgTemp + "°C"
+		}
+	});
+
+}
+	
+					var temperature_options = {
+                        chart: {
+                            renderTo: 'container',
+                            animation : false,
+                            zoomType: 'x',
+							type: 'spline',
+							events: { 
+								redraw: UpdateTempAvg,
+								load: UpdateTempAvg
+								}
+                        },
+                        title: {
+                            text: 'Température',
+                        },
+                        subtitle: {
+                            text: ''
+                        },
+                        plotOptions: {
+                            stickyTracking: false,
+                            series : {},
+							marker: { enabled: false }
+                        },
+                        xAxis: {
+                            type: 'datetime',
+                            gridLineWidth : 1,
+                            dateTimeLabelFormats : {
+                                second: '%H:%M:%S',
+                                minute: '%H:%M',
+                                hour: '%H:%M',
+                                day: '%A %e %B',
+                                week: '%e. %b',
+                                month: '%b %y',
+                                year: '%Y'
+                            },
+                        },
+                        yAxis: [{
+                            title: {
+                                text: 'Température',
+                                style: {
+                                    color: '#DD0000'
+                                },
+                           },
+                           showFirstLabel : false
+                        }],
+
+                        series: []
+                    };
+					
+function UpdateEDFPrice(){
+						var TotJoules=0;
+						var step=0;
+						var series_index = 2;
+
+						extremes = this.xAxis[0].getExtremes();
+
+						for (var i = 1; i < this.series[series_index].yData.length; i++) {
+							step = this.series[series_index].xData[i] - this.series[series_index].xData[i-1];
+							if (this.series[series_index].xData[i] > extremes.max) {
+								break;
+							}
+							if (this.series[series_index].xData[i] >= extremes.min) {
+								TotJoules += this.series[series_index].yData[i] * step / 1000;
+							}
+						} 
+						var TotkWh = TotJoules / 3600000;
+						var Price = TotkWh * 0.1068;
+
+						$('#edf_report').html("<b>Total kWh: </b> " + TotkWh + ", price: <b>" + Price.toFixed(1) + "EUR</b> <br/>");
+
+/*						this.yAxis[0].removePlotBand('moy-temp');
+						// Affichage dans le graphe
+						this.yAxis[0].addPlotLine({
+	color: '#B5E61D',
+	width: 2,
+	value: AvgTemp,
+	dashStyle: 'Dash',
+	id:'moy-temp',
+	label: {
+		text: "Avg.Temp.:" + AvgTemp + "°C"
+		}
+	});*/
+
+}
+					var edf_options = {
+                        chart: {
+                            renderTo: 'container_edf',
+                            animation : false,
+                            zoomType: 'x',
+							events: { 
+								redraw: UpdateEDFPrice,
+								load: UpdateEDFPrice
+								}
+                        },
+                        title: {
+                            text: 'Electricité',
+                        },
+                        subtitle: {
+                            text: ''
+                        },
+                        plotOptions: {
+                            stickyTracking: false,
+                            series : {}
+                        },
+                        xAxis: {
+                            type: 'datetime',
+                            gridLineWidth : 1,
+                            dateTimeLabelFormats : {
+                                second: '%H:%M:%S',
+                                minute: '%H:%M',
+                                hour: '%H:%M',
+                                day: '%A %e %B',
+                                week: '%e. %b',
+                                month: '%b %y',
+                                year: '%Y'
+                            }
+                        },
+                        yAxis: [{
+                            title: {
+                                text: 'EDF',
+                                style: {
+                                    color: '#DD0000'
+                                },
+                           },
+                           showFirstLabel : false
+                        }],
+
+                        series: []
+                    };
+					var gas_options = {
+                        chart: {
+                            renderTo: 'container_gas',
+                            animation : false,
+                            zoomType: 'x'
+                        },
+                        title: {
+                            text: 'Gaz',
+                        },
+                        subtitle: {
+                            text: ''
+                        },
+                        plotOptions: {
+                            stickyTracking: false,
+                            series : {}
+                        },
+                        xAxis: {
+                            type: 'datetime',
+                            gridLineWidth : 1,
+                            dateTimeLabelFormats : {
+                                second: '%H:%M:%S',
+                                minute: '%H:%M',
+                                hour: '%H:%M',
+                                day: '%A %e %B',
+                                week: '%e. %b',
+                                month: '%b %y',
+                                year: '%Y'
+                            }
+                        },
+                        yAxis: [{
+                            title: {
+                                text: 'GDF',
+                                style: {
+                                    color: '#DD0000'
+                                },
+                           },
+                           showFirstLabel : false
+                        }],
+
+                        series: []
+                    };
+
+					$.getJSON('temperature.json', function(data) {
+							temperature_options.series = data
+							chart = new Highcharts.Chart(temperature_options);
+					})
+.fail(function( jqxhr, textStatus, error ) {
+		var err = textStatus + ", " + error;
+		console.log( "Request Failed: " + err );
+		});
+					$.getJSON('edf.json', function(data) {
+							edf_options.series = data
+							$.each(edf_options.series, function(index) {
+								edf_options.series[index].type='area'
+							});
+							chart = new Highcharts.Chart(edf_options);
+					})
+.fail(function( jqxhr, textStatus, error ) {
+		var err = textStatus + ", " + error;
+		console.log( "Request Failed: " + err );
+		});
+					$.getJSON('gas.json', function(data) {
+							gas_options.series = data
+							$.each(gas_options.series, function(index) {
+								gas_options.series[index].type='area'
+							});
+							chart = new Highcharts.Chart(gas_options);
+					})
+.fail(function( jqxhr, textStatus, error ) {
+		var err = textStatus + ", " + error;
+		console.log( "Request Failed: " + err );
+		});
+
+                });
+            });
+            </script>
+        </head>
+    <body>
+        <script src="//code.highcharts.com/highcharts.js"></script>
+
+        <div id="container" style="min-width: 400px; height: 800px; margin: 0 auto"></div>
+		<div id="temp_report"></div>
+        <div id="container_edf" style="min-width: 400px; height: 800px; margin: 0 auto"></div>
+		<div id="edf_report"></div>
+        <div id="container_gas" style="min-width: 400px; height: 800px; margin: 0 auto"></div>
+    </body>
+</html>

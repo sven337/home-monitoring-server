@@ -118,7 +118,7 @@ create_composite_xml()
 	# Day first
 	echo '{ 
 		"name": "'$2'",
-		"data": [' >> $GRAPH_PATH/$1.json
+		"data": [ ' >> $GRAPH_PATH/$1.json
 
 	sed -n -e '/NaN/d' -e 's;.*<t>\(.*\)</t><v>\(.*\)</v>.*;\t[\1000, \2],;p' $GRAPH_PATH/$2.xml  >> $GRAPH_PATH/$1.json
 	truncate -s -2 $GRAPH_PATH/$1.json
@@ -127,7 +127,7 @@ create_composite_xml()
 	# Week as a separate series
 	echo ', { 
 		"name": "'$3'",
-		"data": [' >> $GRAPH_PATH/$1.json
+		"data": [ ' >> $GRAPH_PATH/$1.json
 
 	sed -n -e '/NaN/d' -e 's;.*<t>\(.*\)</t><v>\(.*\)</v>.*;\t[\1000, \2],;p' $GRAPH_PATH/$3.xml  >> $GRAPH_PATH/$1.json
 	truncate -s -2 $GRAPH_PATH/$1.json
@@ -138,7 +138,7 @@ create_composite_xml()
 		# Year as a separate series
 		echo ', { 
 			"name": "'$4'",
-			"data": [' >> $GRAPH_PATH/$1.json
+			"data": [ ' >> $GRAPH_PATH/$1.json
 
 		sed -n -e '/NaN/d' -e 's;.*<t>\(.*\)</t><v>\(.*\)</v>.*;\t[\1000, \2],;p' $GRAPH_PATH/$4.xml  >> $GRAPH_PATH/$1.json
 		truncate -s -2 $GRAPH_PATH/$1.json
@@ -154,6 +154,7 @@ create_composite_xml()
 if [ "$1" != "--xml" ]; then
 	rm -f $GRAPH_PATH/temperature*.png
 	rm -f $GRAPH_PATH/edf*.png
+	rm -f $GRAPH_PATH/gas*.png
 	graph_temperature temperature_2hour -2h
 	graph_temperature temperature_day -1d
 	graph_temperature temperature_week -1w
@@ -176,10 +177,10 @@ else
 	create_composite_xml temperature temperature_5min temperature_day
 	export_edf edf_1min -2w now 10000
 	export_edf edf_1hour -30w now 10000
-	export_edf edf_day -2y now
+	export_edf edf_day -2y now 1000
 	create_composite_xml edf edf_1min edf_1hour edf_day
-	export_gas gas_day -1w now
-	export_gas gas_week -1w -1d
-	export_gas gas_year -1y -1w 10000
-	create_composite_xml gas gas_day gas_week gas_year
+	export_gas gas_1min -1d now
+	export_gas gas_1hour -1w -1d
+	export_gas gas_1day -1y -1d 1000
+	create_composite_xml gas gas_1min gas_1hour gas_1day
 fi
