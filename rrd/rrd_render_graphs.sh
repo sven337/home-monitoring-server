@@ -9,17 +9,19 @@ LABEL="--vertical-label"
 graph_temperature()
 {
 	echo Rendering $1
-	rrdtool graph $GRAPH_PATH/$1.png --width 800 --height 400 --vertical-label °C --start $2 \
-			"DEF:temp=$RRD_PATH/temperature.rrd:TEMPERATURE:AVERAGE" \
-			"VDEF:max=temp,MAXIMUM" \
-			"VDEF:min=temp,MINIMUM" \
-			"LINE2:temp#FF3F00:Température" \
-			"HRULE:max#FF0000:Max" \
-			"HRULE:min#0000FF:Min" \
-			"GPRINT:max:Max %2.1lf °C" "GPRINT:max:le %d/%M/%y:strftime" \
-			"GPRINT:min:Min %2.1lf °C" "GPRINT:min:le %d/%M/%y:strftime"
+	for where in officeAH pantry exterior; do
+		rrdtool graph $GRAPH_PATH/$1_${where}.png --width 800 --height 400 --vertical-label °C --start $2 \
+				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
+				"VDEF:max=temp,MAXIMUM" \
+				"VDEF:min=temp,MINIMUM" \
+				"LINE2:temp#FF3F00:Température" \
+				"HRULE:max#FF0000:Max" \
+				"HRULE:min#0000FF:Min" \
+				"GPRINT:max:Max %2.1lf °C" "GPRINT:max:le %d/%M/%y:strftime" \
+				"GPRINT:min:Min %2.1lf °C" "GPRINT:min:le %d/%M/%y:strftime"
 #			"VDEF:slope=temp,LSLSLOPE" "VDEF:inter=temp,LSLINT" \
 #			"GPRINT:slope:Var %2.1lf %s°C/heure"
+	done
 			
 }
 
@@ -61,13 +63,16 @@ export_temperature()
 		MAXROWS=700
 	fi
 	echo Exporting $1
-	rrdtool xport --maxrows $MAXROWS --start $2  --end $3\
-			"DEF:temp=$RRD_PATH/temperature.rrd:TEMPERATURE:AVERAGE" \
-			"VDEF:max=temp,MAXIMUM" \
-			"VDEF:min=temp,MINIMUM" \
-			"XPORT:temp:Temperature"\
-			"PRINT:max:Max temp" \
-			"PRINT:min:Min temp" > $GRAPH_PATH/$1.xml
+	
+	for where in officeAH pantry exterior; do
+		rrdtool xport --maxrows $MAXROWS --start $2  --end $3\
+				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
+				"VDEF:max=temp,MAXIMUM" \
+				"VDEF:min=temp,MINIMUM" \
+				"XPORT:temp:Temperature"\
+				"PRINT:max:Max temp" \
+				"PRINT:min:Min temp" > $GRAPH_PATH/$1_${where}.xml
+	done
 }
 
 export_edf()
@@ -174,13 +179,15 @@ if [ "$1" != "--xml" ]; then
 else 
 	export_temperature temperature_5min -300d now 100000
 	export_temperature temperature_day -369d -1d 
-	create_composite_xml temperature temperature_5min temperature_day
+	for where in officeAH pantry exterior; do
+		create_composite_xml temperature_$where temperature_5min_$where temperature_day_$where
+	done
 	export_edf edf_1min -2w now 10000
 	export_edf edf_1hour -30w now 10000
 	export_edf edf_day -2y now 1000
 	create_composite_xml edf edf_1min edf_1hour edf_day
 	export_gas gas_1min -1d now
-	export_gas gas_1hour -1w -1d
-	export_gas gas_1day -1y -1d 1000
+	export_gas gas_1hour -1w now
+	export_gas gas_1day -1y now 1000
 	create_composite_xml gas gas_1min gas_1hour gas_1day
 fi
