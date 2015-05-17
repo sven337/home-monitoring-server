@@ -44,13 +44,13 @@ def rrdfile(name):
 	return app.config['RRD_PATH'] + '/' + name + ".rrd"
 
 last_electricity_power = -1
-last_temperature = -1.0
+last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0 }
 
-def report_temperature(temp):
+def report_temperature(name, temp):
 	global last_temperature
-	last_temperature = float(temp)
-	rrdtool.update(rrdfile("temperature"), "N:" + str(temp))
-	return "Updated temperature to " + str(temp)
+	last_temperature[name] = float(temp)
+	rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
+	return "Updated " + name + " temperature to " + str(temp)
 
 last_gas_index = -1
 last_gas_pulse = -1
@@ -69,6 +69,7 @@ def report_gas_pulse(pulse):
 		# RRD doesn't easily give this information so read it from a file instead!
 		index_file = open(rrdfile("gas_last_index")[0:-3] + "txt")
 		last_gas_index = float(index_file.read())
+		index_file.close()
 
 	# If we do not know the previous pulse counter value, there is nothing we can do, 
 	# so just ignore this update
@@ -106,7 +107,14 @@ def report_elec(pwr, idx):
 #@admin_required
 def update(feed_class,feed_data,feed_field=""):
 	if feed_class == "temperature":
-		return report_temperature(float(feed_data))
+		if feed_field == "pantry":
+			return report_temperature("pantry", float(feed_data))
+		elif feed_field == "officeAH":
+			return report_temperature("officeAH", float(feed_data))
+		elif feed_field == "exterior":
+			return report_temperature("exterior", float(feed_data))
+		else:
+			return "Must specify thermometer location (pantry, officeAH, exterior)"
 	elif feed_class == "gas":
 		if feed_field == "pulse":
 			return report_gas_pulse(int(feed_data))
@@ -128,10 +136,14 @@ def render_graphs():
 
 
 @app.route("/last/<feed_class>/")
+@app.route("/last/<feed_class>/<feed_field>")
 #@key_required
-def last(feed_class):
+def last(feed_class, feed_field=""):
 	if feed_class == "temperature":
-		return str(last_temperature)
+		if feed_field == "":
+			return str(last_temperature)
+		else:
+		   	return str(last_temperature[feed_field])
 	elif feed_class == "gas":
 		return str(last_gas_index) + "," + str(last_gas_pulse)
 	elif feed_class == "electricity":
