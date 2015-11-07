@@ -57,7 +57,6 @@ graph_gas()
 
 export_temperature()
 {
-
 	MAXROWS="$4"
 	if [ -z "$MAXROWS" ]; then
 		MAXROWS=700
@@ -67,11 +66,8 @@ export_temperature()
 	for where in officeAH pantry exterior; do
 		rrdtool xport --maxrows $MAXROWS --start $2  --end $3\
 				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
-				"VDEF:max=temp,MAXIMUM" \
-				"VDEF:min=temp,MINIMUM" \
 				"XPORT:temp:Temperature"\
-				"PRINT:max:Max temp" \
-				"PRINT:min:Min temp" > $GRAPH_PATH/$1_${where}.xml
+				> $GRAPH_PATH/$1_${where}.xml
 	done
 }
 
@@ -84,13 +80,8 @@ export_edf()
 	echo Exporting $1
 	rrdtool xport --maxrows $MAXROWS --start $2 --end $3\
 		"DEF:power=$RRD_PATH/edf.rrd:ELEC_POWER:AVERAGE" \
-		"DEF:kwh=$RRD_PATH/edf.rrd:ELEC_KWH:AVERAGE" \
-		"CDEF:eurovect=kwh,0.1329,*" \
-		"VDEF:euro=eurovect,TOTAL" \
-		"VDEF:total=kwh,TOTAL" \
 		"XPORT:power:Puissance"\
-		"PRINT:euro:\"Prix total\""\
-		"PRINT:total:kWh total\"" > $GRAPH_PATH/$1.xml
+		 > $GRAPH_PATH/$1.xml
 }
 
 export_gas()
@@ -105,10 +96,6 @@ export_gas()
 		"DEF:pulse=$RRD_PATH/gas.rrd:GAS_PULSE:AVERAGE" \
 		"CDEF:kwh=pulse,0.1082,*" \
 		"CDEF:power=kwh,3600000,*" \
-		"CDEF:eurovect=kwh,0.0576,*" \
-		"VDEF:euro=eurovect,TOTAL" \
-		"VDEF:total=kwh,TOTAL" \
-		"VDEF:index=idx,LAST" \
 		"XPORT:power:Puissance" > $GRAPH_PATH/$1.xml
 }
 
