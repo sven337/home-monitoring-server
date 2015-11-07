@@ -1,8 +1,14 @@
 from functools import wraps
 import rrdtool
 import os
+import time
+import logging
+from datetime import datetime
 from flask import Flask, abort, request, url_for, render_template
 app = Flask(__name__)
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.WARNING)
 
 app.config.from_object('default_settings')
 try:
@@ -45,10 +51,14 @@ def rrdfile(name):
 
 last_electricity_power = -1
 last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0 }
+last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31) }
+last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
+last_battery_level_date = { 'exterior_thermometer' : datetime(2014, 12, 31), 'mailbox' : datetime(2014, 12, 31), 'gas' : datetime(2014, 12, 31) }
 
 def report_temperature(name, temp):
 	global last_temperature
 	last_temperature[name] = float(temp)
+	last_temperature_date[name] = datetime.now()
 	rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
 	return "Updated " + name + " temperature to " + str(temp)
 
@@ -59,6 +69,15 @@ def write_gas_index(idx):
 	index_file = open(rrdfile("gas_last_index")[0:-3] + "txt", 'w')
 	index_file.write(str(idx))
 	index_file.close()
+
+def report_battery_level(name, percentage):
+	global last_battery_level
+	batlevel = open(rrdfile("battery_level_" + name)[0:-3] + "txt", 'a')
+	batlevel.write(time.strftime("%Y-%m-%d %H:%M:%S\t") + str(percentage) + "%\n")
+	batlevel.close();
+	last_battery_level[name] = percentage
+	last_battery_level_date[name] = datetime.now()
+	return "Recorded battery level for " + name + " at " + str(percentage) + "%\n"
 
 
 def report_gas_pulse(pulse):
@@ -101,6 +120,8 @@ def report_elec(pwr, idx):
 	rrdtool.update(rrdfile("edf"), "N:" + str(pwr) + ":" + str(idx))
 	return "Reported electricity power " + str(pwr) + ", index " + str(idx) + "\n"
 
+def report_humidity(name, percentage):
+	return "Ignoring reported humidity for " + str(name) + "=" + str(percentage) + "\n"
 
 @app.route("/update/<feed_class>/<feed_data>")
 @app.route("/update/<feed_class>/<feed_field>/<feed_data>")
@@ -125,6 +146,14 @@ def update(feed_class,feed_data,feed_field=""):
 	elif feed_class == "electricity":
 		elec_data = feed_data.split(',')
 		return report_elec(float(elec_data[0]), int(elec_data[1]))
+	elif feed_class == "battery_level":
+		if feed_field == "":
+			return "Must specify name of device for battery level report (free form)"
+		return report_battery_level(feed_field, int(feed_data))
+	elif feed_class == "humidity":
+		if feed_field == "":
+			return "Must specify hygrometer location (pantry, officeAH, exterior)"
+		return report_humidity(feed_field, int(feed_data));
 	else:
    		return "Unknown feed class", 500
 
@@ -143,11 +172,20 @@ def last(feed_class, feed_field=""):
 		if feed_field == "":
 			return str(last_temperature)
 		else:
-		   	return str(last_temperature[feed_field])
+			updated_last = (datetime.now() - last_temperature_date[feed_field]).total_seconds()
+			if updated_last > 3600:
+				return "OLD"
+			else:
+				return str(last_temperature[feed_field])
 	elif feed_class == "gas":
 		return str(last_gas_index) + "," + str(last_gas_pulse)
 	elif feed_class == "electricity":
 		return str(last_electricity_power)
+	elif feed_class == "battery_level":
+		if feed_field == "":
+			return str(last_battery_level)
+		else:
+		   	return str(last_battery_level[feed_field])
 	else:
    		return "Unknown feed class", 500
 
@@ -162,4 +200,5 @@ def get_rrd_file(feed_class):
 @app.route("/graph/<feed_class>")
 #@key_required
 def show_graphs(feed_class=""):
-	return render_template('rrdJFlot.html', rrdfile="/rrd/" + feed_class + "?api_key=eb5bb384-2d0b-4a2e-abe1-3f6abb564619")
+	#not working
+	return render_template('rrdJFlot.html', rrdfile="/rrd/" + feed_class)
