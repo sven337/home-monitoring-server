@@ -225,7 +225,7 @@ static void set_burner_power(int power)
 
 	if (power != current_burner_power) {
 		current_burner_power = power;
-		sprintf(buf, "date; echo %s | nc -u -w 1 -q 1 boiler_ip %d", cmd, boiler_ip, boiler_port);
+		sprintf(buf, "date; echo %s | nc -u -w 1 -q 1 %s %d", cmd, boiler_ip, boiler_port);
 		system(buf);
 	}
 }
@@ -352,7 +352,7 @@ void loop(void)
 	FD_ZERO(&rfd);
 	FD_SET(sockfd, &rfd);
 
-	tv.tv_sec = 15;
+	tv.tv_sec = 30;
 	tv.tv_usec = 0;
 
 	ret = select(sockfd+1, &rfd, NULL, NULL, &tv);
