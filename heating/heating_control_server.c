@@ -16,7 +16,7 @@
 // Target temps in °C * 10
 const int target_temp_cold = 175;
 const int target_temp_away = 140;
-const int target_temp_hot = 205;
+const int target_temp_hot = 210;
 
 // Stop heating when it's 16° outside
 const int non_heating_exterior_temp = 160;
@@ -180,7 +180,7 @@ static int get_temp(const char *name)
 	temperature = strtof(value, NULL) * 10;
 	pclose(pipe);
 
-	printf("Returning temperature %d\n", (int)temperature);
+//	printf("Returning temperature %d\n", (int)temperature);
 	return (int)temperature;
 }
 
@@ -208,7 +208,7 @@ static void status(void)
 	free(str);
 }
 
-static void set_burner_power(int power)
+static void set_burner_power(int power, int force)
 {
 	// Send the new power order to the burner
 	char buf[1024];
@@ -223,10 +223,11 @@ static void set_burner_power(int power)
 		return;
 	}
 
-	if (power != current_burner_power) {
+	if (force || power != current_burner_power) {
 		current_burner_power = power;
 		sprintf(buf, "date; echo %s | nc -u -w 1 -q 1 %s %d", cmd, boiler_ip, boiler_port);
 		system(buf);
+		next_status_dump_at = time(NULL);
 	}
 }
 
@@ -290,7 +291,12 @@ static void thermostat_loop(void)
 	}
 
 out:
-	set_burner_power(burner_power);
+	set_burner_power(burner_power, 1);
+}
+
+static void resend()
+{
+	set_burner_power(current_burner_power, 1);
 }
 
 static void handle_command(const char *buf)
@@ -305,6 +311,7 @@ static void handle_command(const char *buf)
 			{ "away", away },
 			{ "back", back },
 			{ "status", status },
+			{ "resend", resend },
 		};
 
 	for (unsigned int i = 0; i < sizeof(actions)/sizeof(actions[0]); i++) {
@@ -374,6 +381,8 @@ void loop(void)
 			strftime(timestr, 50, "%F %T:", tmp);
 			fprintf(f, "%s %s", timestr, str);
 			fclose(f);
+		} else {
+			perror("Opening log file");
 		}
 		next_status_dump_at = time(NULL) + 15 * 60;
 	}
