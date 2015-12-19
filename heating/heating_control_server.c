@@ -41,6 +41,7 @@ enum state {
 
 int current_burner_power = -1;
 int is_away = 0;
+time_t heating_forced_until;
 
 int have_clients()
 {
@@ -197,7 +198,7 @@ static int get_exterior_temp()
 static char *status_string(void)
 {
 	char *str;
-	asprintf(&str, "State: %s. Burner power is %d. Ext temp %d, int temp %d\n", is_away ? "AWAY" : (current_state == HOT ? "HOT" : "COLD"), current_burner_power, get_exterior_temp(), get_interior_temp());
+	asprintf(&str, "State: %s. Burner power is %d. Ext temp %d, int temp %d\n", is_away ? "AWAY" : (time(NULL) < heating_forced_until) ? "FORCED" : (current_state == HOT ? "HOT" : "COLD"), current_burner_power, get_exterior_temp(), get_interior_temp());
 	return str;
 }
 
@@ -253,12 +254,21 @@ static void thermostat_loop(void)
 	int exterior_temp = get_exterior_temp();
 	int burner_power;
 	int interior_temp_target = (current_state == HOT) ? target_temp_hot : target_temp_cold;
-	
-	if (interior_temp == -1 || exterior_temp == -1) {
-		// interior or exterior temp is unreliable, warn and cut burner
-		warn("Interior or exterior temperatures are -1.");
+
+	if (heating_forced_until > time(NULL)) {
+		// Forced heating mode
+		burner_power = 100;
+		goto out;
+	}
+
+	if (interior_temp == -1) {
+		warn("Interior temperature error.");
 		burner_power = 0;
 		goto out;
+	} 
+	
+	if (exterior_temp == -1) {
+		warn("Exterior temperature error.");
 	}
 
 	if (is_away && (interior_temp == -1  || interior_temp > target_temp_away)) {
@@ -291,12 +301,17 @@ static void thermostat_loop(void)
 	}
 
 out:
-	set_burner_power(burner_power, 1);
+	set_burner_power(burner_power, 0);
 }
 
 static void resend()
 {
 	set_burner_power(current_burner_power, 1);
+}
+
+static void force_heat()
+{
+	heating_forced_until = time(NULL) + 20 * 60;
 }
 
 static void handle_command(const char *buf)
@@ -312,6 +327,7 @@ static void handle_command(const char *buf)
 			{ "back", back },
 			{ "status", status },
 			{ "resend", resend },
+			{ "forceheat", force_heat },
 		};
 
 	for (unsigned int i = 0; i < sizeof(actions)/sizeof(actions[0]); i++) {
@@ -371,7 +387,7 @@ void loop(void)
 
 	thermostat_loop();
 
-	if (time(NULL) > next_status_dump_at) {
+	if (time(NULL) >= next_status_dump_at) {
 		char *str = status_string();
 		char timestr[50];
 		time_t t = time(NULL);
