@@ -50,7 +50,7 @@ def rrdfile(name):
 	return app.config['RRD_PATH'] + '/' + name + ".rrd"
 
 last_electricity_power = -1
-last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0 }
+last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0 }
 last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01) }
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
 last_battery_level_date = { 'exterior_thermometer' : datetime(2014, 12, 31), 'mailbox' : datetime(2014, 12, 31), 'gas' : datetime(2014, 12, 31) }
@@ -117,6 +117,9 @@ def report_gas_index(idx):
 def report_elec(pwr, idx):
 	global last_electricity_power
 	last_electricity_power = int(pwr)
+	if (last_electricity_power > 5500):
+		os.system("cd ../power_warning; ./warn_power.sh " + str(last_electricity_power))
+		
 	rrdtool.update(rrdfile("edf"), "N:" + str(pwr) + ":" + str(idx))
 	return "Reported electricity power " + str(pwr) + ", index " + str(idx) + "\n"
 
