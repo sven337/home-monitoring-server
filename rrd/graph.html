@@ -163,18 +163,6 @@ function UpdateEDFPrice(){
 
 						$('#edf_report').html("<b>Total kWh: </b> " + TotkWh + ", price: <b>" + Price.toFixed(1) + "EUR</b> <br/>");
 
-/*						this.yAxis[0].removePlotBand('moy-temp');
-						// Affichage dans le graphe
-						this.yAxis[0].addPlotLine({
-	color: '#B5E61D',
-	width: 2,
-	value: AvgTemp,
-	dashStyle: 'Dash',
-	id:'moy-temp',
-	label: {
-		text: "Avg.Temp.:" + AvgTemp + "°C"
-		}
-	});*/
 
 }
 					var edf_options = {
@@ -263,9 +251,21 @@ function UpdateEDFPrice(){
 
                         series: []
                     };
+					$.getJSON('temperature_exterior.json', function(data) {
+							temperature_options.series[2] = data[0]
+							temperature_options.series[2].visible = false
+							temperature_options.series[3] = data[1]
+					})
+					$.getJSON('temperature_officeAH.json', function(data) {
+							temperature_options.series[4] = data[0]
+							temperature_options.series[4].visible = false
+							temperature_options.series[5] = data[1]
+					})
 
-					$.getJSON('temperature.json', function(data) {
-							temperature_options.series = data
+					$.getJSON('temperature_pantry.json', function(data) {
+							temperature_options.series[0] = data[0]
+							temperature_options.series[0].visible = false
+							temperature_options.series[1] = data[1]
 							chart = new Highcharts.Chart(temperature_options);
 					})
 .fail(function( jqxhr, textStatus, error ) {
@@ -274,6 +274,7 @@ function UpdateEDFPrice(){
 		});
 					$.getJSON('edf.json', function(data) {
 							edf_options.series = data
+							edf_options.series[0].visible = false
 							$.each(edf_options.series, function(index) {
 								edf_options.series[index].type='area'
 							});

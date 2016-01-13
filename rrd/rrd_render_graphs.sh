@@ -9,7 +9,7 @@ LABEL="--vertical-label"
 graph_temperature()
 {
 	echo Rendering $1
-	for where in officeAH pantry exterior; do
+	for where in officeAH pantry exterior living bed; do
 		rrdtool graph $GRAPH_PATH/$1_${where}.png --width 800 --height 400 --vertical-label °C --start $2 \
 				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
 				"VDEF:max=temp,MAXIMUM" \
@@ -63,7 +63,7 @@ export_temperature()
 	fi
 	echo Exporting $1
 	
-	for where in officeAH pantry exterior; do
+	for where in officeAH pantry exterior living bed; do
 		rrdtool xport --maxrows $MAXROWS --start $2  --end $3\
 				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
 				"XPORT:temp:Temperature"\
@@ -166,7 +166,7 @@ if [ "$1" != "--xml" ]; then
 else 
 	export_temperature temperature_5min -300d now 100000
 	export_temperature temperature_day -369d -1d 
-	for where in officeAH pantry exterior; do
+	for where in officeAH pantry exterior living bed; do
 		create_composite_xml temperature_$where temperature_5min_$where temperature_day_$where
 	done
 	export_edf edf_1min -2w now 10000
