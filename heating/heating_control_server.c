@@ -14,7 +14,7 @@
 #include <time.h>
 
 // Target temps in °C * 10
-const int target_temp_cold = 175;
+const int target_temp_cold = 180;
 const int target_temp_away = 140;
 const int target_temp_hot = 210;
 
@@ -174,11 +174,17 @@ static int get_temp(const char *name)
 
 	sprintf(buf, "curl -q %s/%s 2>/dev/null", temperature_srv_uri, name);
 	pipe = popen(buf, "r");
+	if (!pipe) {
+		temperature = -1;
+		goto out;
+	}
 	fgets(value, 149, pipe);
 	if (!strcmp(value, "OLD")) {
-		return -1;
+		temperature = -1;
+		goto out;
 	}
 	temperature = strtof(value, NULL) * 10;
+out:
 	pclose(pipe);
 
 //	printf("Returning temperature %d\n", (int)temperature);
@@ -187,7 +193,47 @@ static int get_temp(const char *name)
 
 static int get_interior_temp()
 {
-	return (get_temp("pantry") + 2 * get_temp("officeAH")) / 3;
+	struct {
+		int temperature;
+		int coeff_day;
+		int coeff_night;
+	} temps[] = {
+			{ get_temp("bed"),      1, 7 },
+			{ get_temp("living"),   2, 2 },
+		//	{ get_temp("pantry"),   1, 0 },
+			{ get_temp("officeAH"), 2, 1 },
+	};
+
+	int divisor = 0;
+	int accum = 0;
+
+	int is_night;
+	char hour_of_day_str[10];
+	unsigned int hour_of_day;
+
+	time_t t = time(NULL);
+	struct tm *tm =	localtime(&t);
+	strftime(hour_of_day_str, 10, "%H", tm);
+
+	hour_of_day = atoi(hour_of_day_str);
+	is_night = (hour_of_day < 7 || hour_of_day > 21);
+
+	for (unsigned int i = 0; i < sizeof(temps)/sizeof(temps[0]); i++)  {
+		int coeff = (is_night) ? temps[i].coeff_night : temps[i].coeff_day;
+
+		if (temps[i].temperature == -1) {
+			coeff = 0;
+		}
+
+		accum += temps[i].temperature * coeff;
+		divisor += coeff;
+	}
+
+	if (divisor) {
+		return accum/divisor;
+	}
+
+	return -1;
 }
 
 static int get_exterior_temp()
@@ -225,10 +271,12 @@ static void set_burner_power(int power, int force)
 	}
 
 	if (force || power != current_burner_power) {
+		if (power != current_burner_power) {
+			next_status_dump_at = time(NULL);
+		}
 		current_burner_power = power;
 		sprintf(buf, "date; echo %s | nc -u -w 1 -q 1 %s %d", cmd, boiler_ip, boiler_port);
 		system(buf);
-		next_status_dump_at = time(NULL);
 	}
 }
 
@@ -284,12 +332,12 @@ static void thermostat_loop(void)
 		burner_power = 100;
 	}
 
-	if (interior_temp < interior_temp_target - 5) {
+	if (interior_temp < interior_temp_target - 3) {
 		if (!burner_power) {
 			warn("Exterior is at no-heat temperature, but internal temp is below target!");
 		}
 		burner_power = 100;
-	} else if (interior_temp > interior_temp_target + 5) {
+	} else if (interior_temp > interior_temp_target + 3) {
 		if (burner_power == 100) {
 			// XXX remove once we have climatic control
 			warn("Exterior requests heating, but internal temp is above target!");
@@ -301,7 +349,7 @@ static void thermostat_loop(void)
 	}
 
 out:
-	set_burner_power(burner_power, 0);
+	set_burner_power(burner_power, 1);
 }
 
 static void resend()
