@@ -7,8 +7,8 @@ from datetime import datetime
 from flask import Flask, abort, request, url_for, render_template
 app = Flask(__name__)
 
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.WARNING)
+#log = logging.getLogger('werkzeug')
+#log.setLevel(logging.WARNING)
 
 app.config.from_object('default_settings')
 try:
@@ -51,7 +51,7 @@ def rrdfile(name):
 
 last_electricity_power = -1
 last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0 }
-last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31) }
+last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01) }
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
 last_battery_level_date = { 'exterior_thermometer' : datetime(2014, 12, 31), 'mailbox' : datetime(2014, 12, 31), 'gas' : datetime(2014, 12, 31) }
 
@@ -128,14 +128,10 @@ def report_humidity(name, percentage):
 #@admin_required
 def update(feed_class,feed_data,feed_field=""):
 	if feed_class == "temperature":
-		if feed_field == "pantry":
-			return report_temperature("pantry", float(feed_data))
-		elif feed_field == "officeAH":
-			return report_temperature("officeAH", float(feed_data))
-		elif feed_field == "exterior":
-			return report_temperature("exterior", float(feed_data))
-		else:
-			return "Must specify thermometer location (pantry, officeAH, exterior)"
+		if feed_field not in [ "pantry", "officeAH", "exterior", "living", "bed" ]:
+			return "Must specify valid thermometer location (pantry, officeAH, exterior, living, bed)"
+	
+		return report_temperature(str(feed_field), float(feed_data))
 	elif feed_class == "gas":
 		if feed_field == "pulse":
 			return report_gas_pulse(int(feed_data))
@@ -170,7 +166,7 @@ def render_graphs():
 def last(feed_class, feed_field=""):
 	if feed_class == "temperature":
 		if feed_field == "":
-			return str(last_temperature)
+			return str(last_temperature) + str(last_temperature_date)
 		else:
 			updated_last = (datetime.now() - last_temperature_date[feed_field]).total_seconds()
 			if updated_last > 3600:
