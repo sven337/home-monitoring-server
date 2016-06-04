@@ -77,6 +77,8 @@ def report_battery_level(name, percentage):
 	batlevel.close();
 	last_battery_level[name] = percentage
 	last_battery_level_date[name] = datetime.now()
+	if percentage < 15:
+		os.system("mail root -s  'Low battery for " + name + ": " + percentage)
 	return "Recorded battery level for " + name + " at " + str(percentage) + "%\n"
 
 
@@ -117,7 +119,7 @@ def report_gas_index(idx):
 def report_elec(pwr, idx):
 	global last_electricity_power
 	last_electricity_power = int(pwr)
-	if (last_electricity_power > 5500):
+	if (last_electricity_power >= 6500):
 		os.system("cd ../power_warning; ./warn_power.sh " + str(last_electricity_power))
 		
 	rrdtool.update(rrdfile("edf"), "N:" + str(pwr) + ":" + str(idx))
