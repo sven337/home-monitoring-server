@@ -53,6 +53,8 @@ last_electricity_power = -1
 last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0 }
 last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01) }
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
+last_solar_current = { 'exterior_thermometer' : 0 }
+last_solar_voltage = { 'exterior_thermometer' : 0 }
 last_battery_level_date = { 'exterior_thermometer' : datetime(2014, 12, 31), 'mailbox' : datetime(2014, 12, 31), 'gas' : datetime(2014, 12, 31) }
 
 def report_temperature(name, temp):
@@ -78,9 +80,24 @@ def report_battery_level(name, percentage):
 	last_battery_level[name] = percentage
 	last_battery_level_date[name] = datetime.now()
 	if percentage < 15:
-		os.system("mail root -s  'Low battery for " + name + ": " + percentage)
+		os.system("mail root -s  'Low battery for " + name + ": " + str(percentage))
 	return "Recorded battery level for " + name + " at " + str(percentage) + "%\n"
 
+def report_solar_voltage(name, voltage):
+	global last_solar_voltage
+	f = open(rrdfile("solar_voltage_" + name)[0:-3] + "txt", 'a')
+	f.write(time.strftime("%Y-%m-%d %H:%M:%S\t") + str(voltage) + "V\n")
+	f.close();
+	last_solar_voltage[name] = voltage
+	return "Recorded solar voltage for " + name + " at " + str(voltage) + "V\n"
+
+def report_solar_current(name, current):
+	global last_solar_current
+	batlevel = open(rrdfile("solar_current_" + name)[0:-3] + "txt", 'a')
+	batlevel.write(time.strftime("%Y-%m-%d %H:%M:%S\t") + str(current) + "mA\n")
+	batlevel.close();
+	last_solar_current[name] = current
+	return "Recorded solar current for " + name + " at " + str(current) + "mA\n"
 
 def report_gas_pulse(pulse):
 	global last_gas_index
@@ -155,6 +172,14 @@ def update(feed_class,feed_data,feed_field=""):
 		if feed_field == "":
 			return "Must specify hygrometer location (pantry, officeAH, exterior)"
 		return report_humidity(feed_field, int(feed_data));
+	elif feed_class == "solar_voltage":
+		if feed_field == "":
+			return "Must specify name of device for solar voltage report (free form)"
+		return report_solar_voltage(feed_field, float(feed_data))
+	elif feed_class == "solar_current":
+		if feed_field == "":
+			return "Must specify name of device for solar current report (free form)"
+		return report_solar_current(feed_field, float(feed_data))
 	else:
    		return "Unknown feed class", 500
 
@@ -187,6 +212,16 @@ def last(feed_class, feed_field=""):
 			return str(last_battery_level)
 		else:
 		   	return str(last_battery_level[feed_field])
+	elif feed_class == "solar_voltage":
+		if feed_field == "":
+			return str(last_solar_voltage)
+		else:
+		   	return str(last_solar_voltage[feed_field])
+	elif feed_class == "solar_current":
+		if feed_field == "":
+			return str(last_solar_current)
+		else:
+		   	return str(last_solar_current[feed_field])
 	else:
    		return "Unknown feed class", 500
 
