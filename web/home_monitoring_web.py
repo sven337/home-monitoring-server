@@ -50,8 +50,8 @@ def rrdfile(name):
 	return app.config['RRD_PATH'] + '/' + name + ".rrd"
 
 last_electricity_power = -1
-last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0 }
-last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01) }
+last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0, 'kidbed' : 19.0 }
+last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01), 'kidbed' : datetime(2015, 12, 01) }
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
 last_solar_current = { 'exterior_thermometer' : 0 }
 last_solar_voltage = { 'exterior_thermometer' : 0 }
@@ -61,7 +61,8 @@ def report_temperature(name, temp):
 	global last_temperature
 	last_temperature[name] = float(temp)
 	last_temperature_date[name] = datetime.now()
-	rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
+	if (last_temperature[name] != 999.0):
+		rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
 	return "Updated " + name + " temperature to " + str(temp)
 
 last_gas_index = -1
@@ -150,8 +151,8 @@ def report_humidity(name, percentage):
 #@admin_required
 def update(feed_class,feed_data,feed_field=""):
 	if feed_class == "temperature":
-		if feed_field not in [ "pantry", "officeAH", "exterior", "living", "bed" ]:
-			return "Must specify valid thermometer location (pantry, officeAH, exterior, living, bed)"
+		if feed_field not in [ "pantry", "officeAH", "exterior", "living", "bed", "kidbed" ]:
+			return "Must specify valid thermometer location (pantry, officeAH, exterior, living, bed, kidbed)"
 	
 		return report_temperature(str(feed_field), float(feed_data))
 	elif feed_class == "gas":
@@ -238,3 +239,8 @@ def get_rrd_file(feed_class):
 def show_graphs(feed_class=""):
 	#not working
 	return render_template('rrdJFlot.html', rrdfile="/rrd/" + feed_class)
+
+@app.route("/deep_sleep_mode/")
+def deep_sleep_mode():
+#Used by my ESP8266 to know whether they must go deep sleep or stay awake to receive over the air updates
+	return "1"
