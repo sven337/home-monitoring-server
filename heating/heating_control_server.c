@@ -201,7 +201,7 @@ static int get_interior_temp()
 			{ get_temp("bed"),      1, 7 },
 			{ get_temp("living"),   2, 2 },
 		//	{ get_temp("pantry"),   1, 0 },
-			{ get_temp("officeAH"), 2, 1 },
+			{ get_temp("officeAH"), 2, 3 },
 	};
 
 	int divisor = 0;
