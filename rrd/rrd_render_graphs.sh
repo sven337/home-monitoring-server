@@ -173,8 +173,8 @@ else
 	export_edf edf_1hour -30w now 10000
 	export_edf edf_day -2y now 1000
 	create_composite_xml edf edf_1min edf_1hour edf_day
-	export_gas gas_1min -1d now
-	export_gas gas_1hour -1w now
-	export_gas gas_1day -1y now 1000
+	export_gas gas_1min -2w now
+	export_gas gas_1hour -30w now
+	export_gas gas_1day -2y now 1000
 	create_composite_xml gas gas_1min gas_1hour gas_1day
 fi
