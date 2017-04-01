@@ -23,7 +23,7 @@ const int non_heating_exterior_temp = 160;
 
 const int PORT = 45889;
 
-const char *boiler_ip = "192.168.0.33";
+const char *boiler_ip = "192.168.0.12";
 const int boiler_port = 2222;
 
 const char *temperature_srv_uri = "http://192.168.0.6:5000/last/temperature";
@@ -41,6 +41,7 @@ enum state {
 
 int current_burner_power = -1;
 int is_away = 0;
+int is_towels = 0;
 time_t heating_forced_until;
 
 int have_clients()
@@ -165,6 +166,16 @@ static void back(void)
 	is_away = 0;
 }
 
+static void towelsonly(void)
+{
+	is_towels = 1;
+}
+
+static void towelsnormal(void)
+{
+	is_towels = 0;
+}
+
 static int get_temp(const char *name)
 {
 	char buf[2048];
@@ -201,7 +212,8 @@ static int get_interior_temp()
 			{ get_temp("bed"),      1, 7 },
 			{ get_temp("living"),   2, 2 },
 		//	{ get_temp("pantry"),   1, 0 },
-			{ get_temp("officeAH"), 2, 3 },
+			{ get_temp("officeAH"), 2, 1 },
+			{ get_temp("kidbed"),   1, 3 },
 	};
 
 	int divisor = 0;
@@ -294,13 +306,9 @@ static void warn(const char *fmt, ...)
 
 static void thermostat_loop(void)
 {
-	// température ext de non chauffage environ 15°C
-
-    // dans un premier temps, fonctionnement en tout-ou-rien (avec température raisonnable configurée sur la chaudière) basé sur l'heure de la journée, température intérieure (corrigée), et température extérieure.
-
 	int interior_temp = get_interior_temp();
 	int exterior_temp = get_exterior_temp();
-	int burner_power;
+	int burner_power = 0;
 	int interior_temp_target = (current_state == HOT) ? target_temp_hot : target_temp_cold;
 
 	if (heating_forced_until > time(NULL)) {
@@ -316,14 +324,14 @@ static void thermostat_loop(void)
 	} 
 	
 	if (exterior_temp == -1) {
-		warn("Exterior temperature error.");
+//		warn("Exterior temperature error.");
 	}
 
 	if (is_away && (interior_temp == -1  || interior_temp > target_temp_away)) {
 		burner_power = 0;
 		goto out;
 	}
-
+/*
 	if (exterior_temp >= non_heating_exterior_temp) {
 		// If it's hotter outside than the non-heating temperature threshold, cut power completely
 		burner_power = 0;
@@ -331,20 +339,20 @@ static void thermostat_loop(void)
 		// XXX climatic control, for now just use 100
 		burner_power = 100;
 	}
-
+*/
 	if (interior_temp < interior_temp_target - 3) {
 		if (!burner_power) {
 			warn("Exterior is at no-heat temperature, but internal temp is below target!");
 		}
 		burner_power = 100;
-	} else if (interior_temp > interior_temp_target + 3) {
+	} else if (interior_temp > interior_temp_target + 1) {
 		if (burner_power == 100) {
 			// XXX remove once we have climatic control
 			warn("Exterior requests heating, but internal temp is above target!");
 		}
 		burner_power = 0;
 	} else {
-		// Temperature is within internal constraints - heat or not based on exterior decision
+		// Temperature is within internal constraints - no heat
 		;
 	}
 
