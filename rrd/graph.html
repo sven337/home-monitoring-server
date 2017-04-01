@@ -261,6 +261,21 @@ function UpdateEDFPrice(){
 							temperature_options.series[4].visible = false
 							temperature_options.series[5] = data[1]
 					})
+					$.getJSON('temperature_bed.json', function(data) {
+							temperature_options.series[6] = data[0]
+							temperature_options.series[6].visible = false
+							temperature_options.series[7] = data[1]
+					})
+					$.getJSON('temperature_living.json', function(data) {
+							temperature_options.series[8] = data[0]
+							temperature_options.series[8].visible = false
+							temperature_options.series[9] = data[1]
+					})
+					$.getJSON('temperature_kidbed.json', function(data) {
+							temperature_options.series[10] = data[0]
+							temperature_options.series[10].visible = false
+							temperature_options.series[11] = data[1]
+					})
 
 					$.getJSON('temperature_pantry.json', function(data) {
 							temperature_options.series[0] = data[0]
