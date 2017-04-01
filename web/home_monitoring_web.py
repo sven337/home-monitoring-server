@@ -190,6 +190,27 @@ def render_graphs():
 	os.system("cd ../rrd; ./rrd_render_graphs.sh")
 	return "Done"
 
+def show_nice_temperature():
+# import things
+	from flask_table import Table, Col
+
+# Declare your table
+	class ItemTable(Table):
+		name = Col('Sensor')
+		temperature = Col('Temperature')
+		date = Col('Date')
+
+# Or, equivalently, some dicts
+	items = [] 
+	for n,t in last_temperature.items():
+		items.append(dict(name=n,temperature=t,date=last_temperature_date[n]))
+
+# Populate the table
+	table = ItemTable(items)
+
+# Print the html
+	return table.__html__()
+#	return str(last_temperature) + str(last_temperature_date)
 
 @app.route("/last/<feed_class>/")
 @app.route("/last/<feed_class>/<feed_field>")
@@ -197,7 +218,7 @@ def render_graphs():
 def last(feed_class, feed_field=""):
 	if feed_class == "temperature":
 		if feed_field == "":
-			return str(last_temperature) + str(last_temperature_date)
+			return show_nice_temperature()
 		else:
 			updated_last = (datetime.now() - last_temperature_date[feed_field]).total_seconds()
 			if updated_last > 3600:
@@ -244,3 +265,8 @@ def show_graphs(feed_class=""):
 def deep_sleep_mode():
 #Used by my ESP8266 to know whether they must go deep sleep or stay awake to receive over the air updates
 	return "1"
+
+@app.route("/terrace_pumping_request/")
+def terrace_pumping_request():
+#Tell my terrace pump to start (to remove water from it)
+	return "0"
