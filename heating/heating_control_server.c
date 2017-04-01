@@ -202,6 +202,36 @@ out:
 	return (int)temperature;
 }
 
+static void get_time(unsigned int *hour, unsigned int *minute)
+{
+	char hour_of_day_str[10], minute_of_day_str[10];
+
+	time_t t = time(NULL);
+	struct tm *tm =	localtime(&t);
+	strftime(hour_of_day_str, 10, "%H", tm);
+	strftime(minute_of_day_str, 10, "%M", tm);
+	if (hour) {
+		*hour = atoi(hour_of_day_str);
+	} 
+	if (minute) {
+		*minute = atoi(minute_of_day_str);
+	}
+}
+
+static unsigned int get_hour_of_day()
+{
+	unsigned int hour;
+	get_time(&hour, NULL);
+	return hour;
+}
+
+static unsigned int get_minute_of_day()
+{
+	unsigned int min;
+	get_time(NULL, &min);
+	return min;
+}
+
 static int get_interior_temp()
 {
 	struct {
@@ -220,14 +250,9 @@ static int get_interior_temp()
 	int accum = 0;
 
 	int is_night;
-	char hour_of_day_str[10];
-	unsigned int hour_of_day;
 
-	time_t t = time(NULL);
-	struct tm *tm =	localtime(&t);
-	strftime(hour_of_day_str, 10, "%H", tm);
+	unsigned int hour_of_day = get_hour_of_day();
 
-	hour_of_day = atoi(hour_of_day_str);
 	is_night = (hour_of_day < 7 || hour_of_day > 21);
 
 	for (unsigned int i = 0; i < sizeof(temps)/sizeof(temps[0]); i++)  {
@@ -253,10 +278,40 @@ static int get_exterior_temp()
 	return get_temp("exterior");
 }
 
-static char *status_string(void)
+static void warn(const char *fmt, ...) 
+{
+	char buf[2048];
+	sprintf(buf, "echo %s | mail -s 'Heater warning' root", fmt);
+
+	if (time(NULL) - last_warning_at > 3600) {
+		system(buf);
+	}
+
+	last_warning_at = time(NULL);
+}
+
+static char *status_string()
 {
 	char *str;
-	asprintf(&str, "State: %s. Burner power is %d. Ext temp %d, int temp %d\n", is_away ? "AWAY" : (time(NULL) < heating_forced_until) ? "FORCED" : (current_state == HOT ? "HOT" : "COLD"), current_burner_power, get_exterior_temp(), get_interior_temp());
+	const char *status;
+
+	if (is_away) {
+		status = "AWAY";
+	} else if (time(NULL) < heating_forced_until) {
+		status = "FORCED";
+	} else if (is_towels) {
+		status = "TOWELS";
+	} else if (current_state == HOT) {
+		status = "HOT";
+	} else {
+		status = "COLD";
+		if (current_state != COLD) {
+			// XXX WTF 
+			warn("Unknown status... debugme");
+			status = "UNKNOWN";
+		} 
+	}
+	asprintf(&str, "State: %s. Burner power is %d. Ext temp %d, int temp %d\n", status, current_burner_power, get_exterior_temp(), get_interior_temp());
 	return str;
 }
 
@@ -292,24 +347,14 @@ static void set_burner_power(int power, int force)
 	}
 }
 
-static void warn(const char *fmt, ...) 
-{
-	char buf[2048];
-	sprintf(buf, "echo %s | mail -s 'Heater warning' root", fmt);
-
-	if (time(NULL) - last_warning_at > 3600) {
-		system(buf);
-	}
-
-	last_warning_at = time(NULL);
-}
-
 static void thermostat_loop(void)
 {
-	int interior_temp = get_interior_temp();
 	int exterior_temp = get_exterior_temp();
 	int burner_power = 0;
 	int interior_temp_target = (current_state == HOT) ? target_temp_hot : target_temp_cold;
+	int interior_temp = get_interior_temp();
+	unsigned int hour_of_day = get_hour_of_day();
+	unsigned int minute_of_day = get_minute_of_day();
 
 	if (heating_forced_until > time(NULL)) {
 		// Forced heating mode
@@ -330,6 +375,18 @@ static void thermostat_loop(void)
 	if (is_away && (interior_temp == -1  || interior_temp > target_temp_away)) {
 		burner_power = 0;
 		goto out;
+	}
+
+	if (is_towels) {
+		if (hour_of_day == 12 || hour_of_day == 0) {
+			if (minute_of_day > 0 && minute_of_day <= 25) {
+				burner_power = 100;
+			} else {
+				burner_power = 0;
+			}
+		} else {
+			burner_power = 0;
+		}
 	}
 /*
 	if (exterior_temp >= non_heating_exterior_temp) {
@@ -384,6 +441,8 @@ static void handle_command(const char *buf)
 			{ "status", status },
 			{ "resend", resend },
 			{ "forceheat", force_heat },
+			{ "towelsonly", towelsonly },
+			{ "towelsnormal", towelsnormal },
 		};
 
 	for (unsigned int i = 0; i < sizeof(actions)/sizeof(actions[0]); i++) {
