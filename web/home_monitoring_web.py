@@ -50,6 +50,7 @@ def rrdfile(name):
 	return app.config['RRD_PATH'] + '/' + name + ".rrd"
 
 last_electricity_power = -1
+last_electricity_index = -1
 last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0, 'kidbed' : 19.0 }
 last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01), 'kidbed' : datetime(2015, 12, 01) }
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
@@ -61,6 +62,9 @@ def report_temperature(name, temp):
 	global last_temperature
 	last_temperature[name] = float(temp)
 	last_temperature_date[name] = datetime.now()
+	if (name == "living"):
+		report_battery_level("frigo", temp);
+		return "Updated " + name + " temperature to " + str(temp)
 	if (last_temperature[name] != 999.0):
 		rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
 	return "Updated " + name + " temperature to " + str(temp)
@@ -80,8 +84,8 @@ def report_battery_level(name, percentage):
 	batlevel.close();
 	last_battery_level[name] = percentage
 	last_battery_level_date[name] = datetime.now()
-	if percentage < 15:
-		os.system("mail root -s  'Low battery for " + name + ": " + str(percentage))
+	if percentage > 0 and percentage < 10:
+		os.system("echo lowbat | mail -s  'Low battery for " + name + ": " + str(percentage) + "'" + " root")
 	return "Recorded battery level for " + name + " at " + str(percentage) + "%\n"
 
 def report_solar_voltage(name, voltage):
@@ -135,8 +139,9 @@ def report_gas_index(idx):
 	return "Set gas index to " + str(last_gas_index) + "\n"
 
 def report_elec(pwr, idx):
-	global last_electricity_power
+	global last_electricity_power, last_electricity_index
 	last_electricity_power = int(pwr)
+	last_electricity_index = int(idx)
 	if (last_electricity_power >= 6500):
 		os.system("cd ../power_warning; ./warn_power.sh " + str(last_electricity_power))
 		
@@ -228,7 +233,7 @@ def last(feed_class, feed_field=""):
 	elif feed_class == "gas":
 		return str(last_gas_index) + "," + str(last_gas_pulse)
 	elif feed_class == "electricity":
-		return str(last_electricity_power)
+		return str(last_electricity_index) + "," + str(last_electricity_power)
 	elif feed_class == "battery_level":
 		if feed_field == "":
 			return str(last_battery_level)
@@ -266,7 +271,3 @@ def deep_sleep_mode():
 #Used by my ESP8266 to know whether they must go deep sleep or stay awake to receive over the air updates
 	return "1"
 
-@app.route("/terrace_pumping_request/")
-def terrace_pumping_request():
-#Tell my terrace pump to start (to remove water from it)
-	return "0"
