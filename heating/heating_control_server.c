@@ -239,11 +239,11 @@ static int get_interior_temp()
 		int coeff_day;
 		int coeff_night;
 	} temps[] = {
-			{ get_temp("bed"),      1, 7 },
-			{ get_temp("living"),   2, 2 },
+			{ get_temp("bed") + 15, 1, 6 },
+			{ get_temp("living"),   3, 2 },
 		//	{ get_temp("pantry"),   1, 0 },
-			{ get_temp("officeAH"), 2, 1 },
-			{ get_temp("kidbed"),   1, 3 },
+//			{ get_temp("officeAH"), 1, 1 },
+			{ get_temp("kidbed"),   2, 4 },
 	};
 
 	int divisor = 0;
@@ -258,7 +258,7 @@ static int get_interior_temp()
 	for (unsigned int i = 0; i < sizeof(temps)/sizeof(temps[0]); i++)  {
 		int coeff = (is_night) ? temps[i].coeff_night : temps[i].coeff_day;
 
-		if (temps[i].temperature == -1) {
+		if (temps[i].temperature == -1 || temps[i].temperature < 10) {
 			coeff = 0;
 		}
 
@@ -349,8 +349,8 @@ static void set_burner_power(int power, int force)
 
 static void thermostat_loop(void)
 {
-	int exterior_temp = get_exterior_temp();
 	int burner_power = 0;
+	int exterior_temp = get_exterior_temp();
 	int interior_temp_target = (current_state == HOT) ? target_temp_hot : target_temp_cold;
 	int interior_temp = get_interior_temp();
 	unsigned int hour_of_day = get_hour_of_day();
@@ -378,8 +378,8 @@ static void thermostat_loop(void)
 	}
 
 	if (is_towels) {
-		if (hour_of_day == 12 || hour_of_day == 0) {
-			if (minute_of_day > 0 && minute_of_day <= 25) {
+		if (hour_of_day == 11 || hour_of_day == 0) {
+			if (minute_of_day > 0 && minute_of_day <= 20) {
 				burner_power = 100;
 			} else {
 				burner_power = 0;
@@ -387,26 +387,12 @@ static void thermostat_loop(void)
 		} else {
 			burner_power = 0;
 		}
+		goto out;
 	}
-/*
-	if (exterior_temp >= non_heating_exterior_temp) {
-		// If it's hotter outside than the non-heating temperature threshold, cut power completely
-		burner_power = 0;
-	} else {
-		// XXX climatic control, for now just use 100
-		burner_power = 100;
-	}
-*/
+	
 	if (interior_temp < interior_temp_target - 3) {
-		if (!burner_power) {
-			warn("Exterior is at no-heat temperature, but internal temp is below target!");
-		}
 		burner_power = 100;
-	} else if (interior_temp > interior_temp_target + 1) {
-		if (burner_power == 100) {
-			// XXX remove once we have climatic control
-			warn("Exterior requests heating, but internal temp is above target!");
-		}
+	} else if (interior_temp >= interior_temp_target) {
 		burner_power = 0;
 	} else {
 		// Temperature is within internal constraints - no heat
