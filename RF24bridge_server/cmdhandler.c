@@ -2,6 +2,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <inttypes.h>
+
+extern int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4]);
 
 static int teleinfo_last_index = 0;
 
@@ -118,11 +122,26 @@ static void teleinfo_line(const char *cmd)
 	}
 }
 
+static void rf24_line(const char *cmd)
+{
+	uint8_t data[4];
+	uint8_t pipe_id;
+
+	// XXX this needs a pipe number too! can do without for now...
+	sscanf(cmd, "p%hhu %hhx %hhx %hhx %hhx", &pipe_id, &data[0], &data[1], &data[2], &data[3]); 
+
+	if (handle_rf24_cmd(pipe_id, data)) {
+		fprintf(stderr, "Did not understand RF24 cmd pipe %d data %x %x %x %x\n", pipe_id, data[0], data[1], data[2], data[3]);
+	}
+}
+
 void handle_serial_input_line(const char *cmd) 
 {
 	if (STREQ(cmd, "TELE ")) {
 		// Teleinfo command
 		teleinfo_line(cmd + 5);
+	} else if (STREQ(cmd, "RF24 ")) {
+		rf24_line(cmd + 5);
 	} else {
 		printf("XXXfromserial \"%s\"\n", cmd);
 	}
