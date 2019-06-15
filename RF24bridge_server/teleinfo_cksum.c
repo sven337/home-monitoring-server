@@ -56,7 +56,7 @@ static char compute_cksum(const char *label, const char *value)
 	return sum;
 }
 
-void parse_message(char *msg)
+void teleinfo_parse_message(char *msg)
 {
 	char *label = msg;
 	char *value = strchr(label, ' ');
@@ -81,7 +81,6 @@ void parse_message(char *msg)
 		fprintf(stderr, "%s %s has cksum %c, invalid on the wire.\n", label, value, *cksum);
 		return;
 	} else {
-//		fprintf(stderr, "%s %s has valid cksum %c\n", label, value, *cksum);
 		accumulate_value(label, value);
 	}
 
