@@ -83,6 +83,8 @@
  */
 #include "speeds.h"
 
+extern void handle_serial_input_line(const char *cmd);
+
 /*
  Save the terminal settings here
  */
@@ -817,7 +819,43 @@ usage(char *this) {
 }
 
 
+static void new_data_from_serial(const char *buf, int len)
+{
+	// Accumulate data from the serial line to create a line-buffer
+#define LINESZ 4096
+	static char *linebuf = NULL;
+	static int linepos = 0;
+
+	if (!linebuf) {
+		linebuf = malloc(LINESZ);
+	}
+
+	for (int i = 0; i < len; i++) {
+		if (linepos == LINESZ) {
+			fprintf(stderr, "%s %d line buffer too small\n", __FUNCTION__, __LINE__);
+			linepos = 0;
+		}
+
+		if (buf[i] == '\n') {
+			// End of line, pass that line to the command handler
+			linebuf[linepos] = 0;
+			handle_serial_input_line(linebuf);
+			linepos = 0;
+			continue;
+		}
+
+		if (buf[i] == '\r') {
+			linebuf[linepos++] = '\\';
+			linebuf[linepos++] = 'R';
+			continue;
+		}
+
+		linebuf[linepos++] = buf[i];
+	}
+}
+
 #define WRITE(fd,b,l) { if(write(fd,b,l) < 1) DIEP("write") }
+#define DATA_FROM_SERIAL(buf, len) new_data_from_serial(buf, len)
 
 int
 main(int argc, char **argv) {
@@ -884,7 +922,7 @@ main(int argc, char **argv) {
 	 */
 	if(istty) {
 		intio = savetio;
-		intio.c_oflag = 0;
+		/*intio.c_oflag = 0;*/
 		intio.c_lflag = 0;
 		intio.c_iflag = savetio.c_iflag & ~(INLCR|IGNCR|ICRNL);
 
@@ -965,7 +1003,7 @@ main(int argc, char **argv) {
 						   || (c > '~' && c < 160))
 							break;
 					}
-					if(j) WRITE(1, s, j);
+					if(j) DATA_FROM_SERIAL(s, j);
 					if(j >= i)
 						break;
 					if(c == '\r' && ignorecr) {
@@ -974,13 +1012,13 @@ main(int argc, char **argv) {
 					else if(c < 32 && showspecial != 2) {
 						cbuf[0] = '^';
 						cbuf[1] = c + '@';
-						WRITE(1, cbuf, 2);
+						DATA_FROM_SERIAL(cbuf, 2);
 					}
 					else if(c == 127 && showspecial != 2)
-						WRITE(1, "[DEL]", 5)
+						DATA_FROM_SERIAL("[DEL]", 5);
 					else {
 						sprintf(cbuf, "[%02x]", c);
-						WRITE(1, cbuf, 4);
+						DATA_FROM_SERIAL(cbuf, 4);
 					}
 					j++;
 					s += j;
@@ -995,7 +1033,7 @@ main(int argc, char **argv) {
 							buf[j++] = *s;
 					i = j;
 				}			
-				WRITE(1, buf, i);
+				DATA_FROM_SERIAL(buf, i);
 			}
 		}
 
