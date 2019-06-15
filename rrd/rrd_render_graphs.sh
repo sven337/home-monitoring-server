@@ -64,7 +64,7 @@ export_temperature()
 	echo Exporting $1
 	
 	for where in officeAH pantry exterior living bed kidbed; do
-		rrdtool xport --maxrows $MAXROWS --start $2  --end $3\
+		rrdtool xport --showtime --maxrows $MAXROWS --start $2  --end $3\
 				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
 				"XPORT:temp:Temperature"\
 				> $GRAPH_PATH/$1_${where}.xml
@@ -78,7 +78,7 @@ export_edf()
 		MAXROWS=700
 	fi
 	echo Exporting $1
-	rrdtool xport --maxrows $MAXROWS --start $2 --end $3\
+	rrdtool xport --showtime --maxrows $MAXROWS --start $2 --end $3\
 		"DEF:power=$RRD_PATH/edf.rrd:ELEC_POWER:AVERAGE" \
 		"XPORT:power:Puissance"\
 		 > $GRAPH_PATH/$1.xml
@@ -91,7 +91,7 @@ export_gas()
 	if [ -z "$MAXROWS" ]; then
 		MAXROWS=700
 	fi
-	rrdtool xport --maxrows $MAXROWS --start $2 --end $3 \
+	rrdtool xport --showtime --maxrows $MAXROWS --start $2 --end $3 \
 		"DEF:idx=$RRD_PATH/gas.rrd:GAS_IDX:MAX" \
 		"DEF:pulse=$RRD_PATH/gas.rrd:GAS_PULSE:AVERAGE" \
 		"CDEF:kwh=pulse,0.1082,*" \
