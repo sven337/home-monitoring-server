@@ -114,6 +114,9 @@ static int therm_message(uint8_t *p)
 		case 'L':
 			location = "living";
 			break;
+		case 'P':
+			location = "pantry";
+			break;
 		default:
 			UNK;
 	}
