@@ -6,11 +6,11 @@ READLINE	= -DREADLINE -lreadline
 
 SRCS := dterm.c \
 		cmdhandler.c \
-		teleinfo_cksum.c rf24.c
+		teleinfo_cksum.c rf24.c hub.c
 
 OBJS := ${SRCS:.c=.o} 
 
-dtermbridge: speeds.h ${OBJS}
+dtermbridge: speeds.h ${OBJS} hub.h
 	gcc ${OBJS} ${CFLAGS} -o dtermbridge -DVERSION='"$(VERSION)"' $(READLINE)
 
 %.o: %.c Makefile

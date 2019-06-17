@@ -83,6 +83,8 @@
  */
 #include "speeds.h"
 
+#include "hub.h"
+
 extern void handle_serial_input_line(const char *cmd);
 
 /*
@@ -855,6 +857,28 @@ static void new_data_from_serial(const char *buf, int len)
 }
 
 #define WRITE(fd,b,l) { if(write(fd,b,l) < 1) DIEP("write") }
+
+static void process_character(int fd, unsigned char inbuf)
+{
+	if(markparity)
+		inbuf |= 0x80;
+	if(spaceparity)
+		inbuf &= 0x7f;
+	if(backspace && (inbuf == 8 || inbuf == 127))
+		inbuf = backspace;
+	if(maplf && inbuf == '\n')
+		inbuf = '\r';
+	WRITE(fd, &inbuf, 1);
+	if(crlf && inbuf == '\r') {
+		inbuf = '\n';
+		WRITE(fd, &inbuf, 1);
+	}
+	if(linedelay && inbuf == '\r')
+		millisleep(linedelay);
+	else if(delay)
+		millisleep(delay);
+}
+
 #define DATA_FROM_SERIAL(buf, len) new_data_from_serial(buf, len)
 
 int
@@ -953,6 +977,13 @@ main(int argc, char **argv) {
 	fd = openport(device);
 	if(fd < 0) exit(1);
 
+	/* Initialize UDP socket */
+	udp_hub_init();
+	if (udp_hub_sockfd <= 0) {
+		fprintf(stderr, "Looks like UDP socket creation failed\n");
+		exit(2);
+	}
+
 	/*
 	 Main loop
 	 */
@@ -971,7 +1002,8 @@ main(int argc, char **argv) {
 		if(!readdelay) 
 			FD_SET(0, &fds);
 		FD_SET(fd, &fds);
-		i = select(fd + 1, &fds, 0,0, readdelay);
+		FD_SET(udp_hub_sockfd, &fds);
+		i = select((fd > udp_hub_sockfd ? fd : udp_hub_sockfd) + 1, &fds, 0,0, readdelay);
 		if(i == -1 && errno != EINTR)
 			DIEP("select");
 		if(i == 0 && readdelay)
@@ -1034,6 +1066,18 @@ main(int argc, char **argv) {
 					i = j;
 				}			
 				DATA_FROM_SERIAL(buf, i);
+			}
+		}
+
+		/* 
+		 Input on UDP 
+		 */
+		if (FD_ISSET(udp_hub_sockfd, &fds)) {
+			char *data;
+			data = udp_hub_consume();
+			for (int i = 0; i < strlen(data); i++) {
+				process_character(fd, data[i]);
+				millisleep(5);
 			}
 		}
 
@@ -1103,23 +1147,7 @@ main(int argc, char **argv) {
 			 CR -> CRLF mapping for TTYs
 			 */
 			else {
-				if(markparity)
-					inbuf |= 0x80;
-				if(spaceparity)
-					inbuf &= 0x7f;
-				if(backspace && (inbuf == 8 || inbuf == 127))
-					inbuf = backspace;
-				if(maplf && inbuf == '\n')
-					inbuf = '\r';
-				WRITE(fd, &inbuf, 1);
-				if(crlf && inbuf == '\r') {
-					inbuf = '\n';
-					WRITE(fd, &inbuf, 1);
-				}
-				if(linedelay && inbuf == '\r')
-					millisleep(linedelay);
-				else if(delay)
-					millisleep(delay);
+				process_character(fd, inbuf);
 			}
 		}
 
