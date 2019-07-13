@@ -105,7 +105,7 @@ static int therm_message(uint8_t *p)
 	const char *location = "";
 
 	switch (p[1]) {
-		case 'N':
+		case 'E':
 			location = "exterior";
 			break;
 		case 'K':
