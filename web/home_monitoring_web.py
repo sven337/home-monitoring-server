@@ -62,9 +62,6 @@ def report_temperature(name, temp):
 	global last_temperature
 	last_temperature[name] = float(temp)
 	last_temperature_date[name] = datetime.now()
-	if (name == "living"):
-		report_battery_level("frigo", temp);
-		return "Updated " + name + " temperature to " + str(temp)
 	if (last_temperature[name] != 999.0):
 		rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
 	return "Updated " + name + " temperature to " + str(temp)
@@ -169,7 +166,7 @@ def update(feed_class,feed_data,feed_field=""):
 	   		return "Must use \"pulse\" or \"set_index\"", 500
 	elif feed_class == "electricity":
 		elec_data = feed_data.split(',')
-		return report_elec(float(elec_data[0]), int(elec_data[1]))
+		return report_elec(int(elec_data[0]), int(elec_data[1]))
 	elif feed_class == "battery_level":
 		if feed_field == "":
 			return "Must specify name of device for battery level report (free form)"
