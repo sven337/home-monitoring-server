@@ -2,15 +2,12 @@
 
 source rrd_config.rc
 
-WIDTH="--width 700"
-HEIGHT="--height 250"
-LABEL="--vertical-label" 
 
 graph_temperature()
 {
 	echo Rendering $1
 	for where in officeAH pantry exterior living bed kidbed; do
-		rrdtool graph $GRAPH_PATH/$1_${where}.png --width 800 --height 400 --vertical-label °C --start $2 \
+		rrdtool graph $GRAPH_PATH/$1_${where}.png --width 1920 --height 1200 --vertical-label °C --start $2 \
 				"DEF:temp=$RRD_PATH/temperature_${where}.rrd:TEMPERATURE:AVERAGE" \
 				"VDEF:max=temp,MAXIMUM" \
 				"VDEF:min=temp,MINIMUM" \
@@ -28,7 +25,7 @@ graph_temperature()
 graph_edf()
 {
 	echo Rendering $1
-	rrdtool graph $GRAPH_PATH/$1_power.png --width 800 --height 400 --vertical-label W --start $2 \
+	rrdtool graph $GRAPH_PATH/$1_power.png --width 1920 --height 1200 --vertical-label W --start $2 \
 		"DEF:power=$RRD_PATH/edf.rrd:ELEC_POWER:AVERAGE" \
 		"DEF:kwh=$RRD_PATH/edf.rrd:ELEC_KWH:AVERAGE" \
 		"AREA:power#000000:Puissance" \
@@ -41,7 +38,7 @@ graph_edf()
 graph_gas()
 {
 	echo Rendering $1
-	rrdtool graph $GRAPH_PATH/$1_gas.png --width 800 --height 400 --vertical-label W --start $2 \
+	rrdtool graph $GRAPH_PATH/$1_gas.png --width 1920 --height 1200 --vertical-label W --start $2 \
 		"DEF:idx=$RRD_PATH/gas.rrd:GAS_IDX:MAX" \
 		"DEF:pulse=$RRD_PATH/gas.rrd:GAS_PULSE:AVERAGE" \
 		"CDEF:kwh=pulse,0.1082,*" \
@@ -164,11 +161,6 @@ if [ "$1" != "--xml" ]; then
 	graph_gas gas_month -1m
 	graph_gas gas_year -1y
 else 
-	export_temperature temperature_5min -300d now 100000
-	export_temperature temperature_day -369d -1d 
-	for where in officeAH pantry exterior living bed kidbed; do
-		create_composite_xml temperature_$where temperature_5min_$where temperature_day_$where
-	done
 	export_edf edf_1min -2w now 10000
 	export_edf edf_1hour -30w now 10000
 	export_edf edf_day -2y now 1000
