@@ -105,7 +105,7 @@ static void teleinfo_line(const char *cmd)
 
 	// Avertissement de Dépassement de Puissance Souscrite
 	if (STREQ(cmd, "ADPS ")) {
-		// XXX NOT TESTED YET warn everyone to turn things off because the breaker is going to blow
+		// warn everyone to turn things off because the breaker is going to blow
 		system("cd ../power_warning; ./warn_power.sh ''");
 		system("echo 'ADPS warning ' | mail root");
 		print = true;
