@@ -27,6 +27,6 @@ generate_temperature_json()
     rm $F.[123] $F
 
 }
-for where in pantry; do #officeAH pantry exterior living bed kidbed; do
+for where in officeAH pantry exterior living bed kidbed; do
     generate_temperature_json temperature_$where
 done
