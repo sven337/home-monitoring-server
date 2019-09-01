@@ -117,6 +117,9 @@ static int therm_message(uint8_t *p)
 		case 'P':
 			location = "pantry";
 			break;
+		case 'B':
+			location = "bed";
+			break;
 		default:
 			UNK;
 	}
@@ -134,6 +137,11 @@ static int therm_message(uint8_t *p)
 			temperature = p[2] << 8 | p[3];
 			printf("Thermometer %s temperature: %f°C\n", location, temperature/16.0f);
 			sprintf(buf, "curl http://192.168.1.6:5000/update/temperature/%s/%f", location, temperature/16.0f);
+			system(buf);
+			break;
+		case 'F':
+			printf("Thermometer %s reports no ACK received when sending temperature\n", location);
+			sprintf(buf, "date");
 			system(buf);
 			break;
 		default:
