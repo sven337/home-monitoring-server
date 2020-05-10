@@ -4,7 +4,9 @@ import os
 import time
 import logging
 from datetime import datetime
+from collections import defaultdict
 from flask import Flask, abort, request, url_for, render_template
+from flask_table import Table, Col
 app = Flask(__name__)
 
 #log = logging.getLogger('werkzeug')
@@ -53,6 +55,8 @@ last_electricity_power = -1
 last_electricity_index = -1
 last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0, 'kidbed' : 19.0 }
 last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01), 'kidbed' : datetime(2015, 12, 01) }
+last_alarm_date = defaultdict(lambda: datetime(2014, 01, 01))
+last_alarm_sensor = defaultdict(lambda: 'UNKNOWN')
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
 last_solar_current = { 'exterior_thermometer' : 0 }
 last_solar_voltage = { 'exterior_thermometer' : 0 }
@@ -65,6 +69,13 @@ def report_temperature(name, temp):
 	if (last_temperature[name] != 999.0):
 		rrdtool.update(rrdfile("temperature_"+name), "N:" + str(temp))
 	return "Updated " + name + " temperature to " + str(temp)
+
+def report_alarm_sensor(name, status):
+	global last_alarm_sensor
+	global last_alarm_date
+	last_alarm_sensor[name] = status
+	last_alarm_date[name] = datetime.now()
+	return ("Updated %s to %s" % (name, status))
 
 last_gas_index = -1
 last_gas_pulse = -1
@@ -183,6 +194,9 @@ def update(feed_class,feed_data,feed_field=""):
 		if feed_field == "":
 			return "Must specify name of device for solar current report (free form)"
 		return report_solar_current(feed_field, float(feed_data))
+	elif feed_class == "alarm":
+		return report_alarm_sensor(str(feed_field), str(feed_data))
+		
 	else:
    		return "Unknown feed class", 500
 
@@ -194,25 +208,33 @@ def render_graphs():
 
 def show_nice_temperature():
 # import things
-	from flask_table import Table, Col
 
-# Declare your table
 	class ItemTable(Table):
 		name = Col('Sensor')
 		temperature = Col('Temperature')
 		date = Col('Date')
 
-# Or, equivalently, some dicts
 	items = [] 
 	for n,t in last_temperature.items():
 		items.append(dict(name=n,temperature=t,date=last_temperature_date[n]))
 
-# Populate the table
 	table = ItemTable(items)
-
-# Print the html
 	return table.__html__()
-#	return str(last_temperature) + str(last_temperature_date)
+
+def show_nice_alarm_sensors():
+# import things
+
+	class ItemTable(Table):
+		name = Col('Sensor')
+		status = Col('Status')
+		date = Col('Date')
+
+	items = [] 
+	for n,s in last_alarm_sensor.items():
+		items.append(dict(name=n,status=s,date=last_alarm_date[n]))
+
+	table = ItemTable(items)
+	return table.__html__()
 
 @app.route("/last/<feed_class>/")
 @app.route("/last/<feed_class>/<feed_field>")
@@ -246,6 +268,16 @@ def last(feed_class, feed_field=""):
 			return str(last_solar_current)
 		else:
 		   	return str(last_solar_current[feed_field])
+	elif feed_class == "alarm":
+		if feed_field == "":
+			return show_nice_alarm_sensors()
+		else:
+			updated_last = (datetime.now() - last_alarm_date[feed_field]).total_seconds()
+			if updated_last > 3600:
+				return "OLD"
+			else:
+				return str(last_alarm_sensor[feed_field])
+			
 	else:
    		return "Unknown feed class", 500
 
