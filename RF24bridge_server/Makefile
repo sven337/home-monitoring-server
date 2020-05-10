@@ -6,7 +6,7 @@ READLINE	= -DREADLINE -lreadline
 
 SRCS := dterm.c \
 		cmdhandler.c \
-		teleinfo_cksum.c rf24.c hub.c
+		rf24.c hub.c
 
 OBJS := ${SRCS:.c=.o} 
 

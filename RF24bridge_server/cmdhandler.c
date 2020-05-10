@@ -107,7 +107,6 @@ static void teleinfo_line(const char *cmd)
 	if (STREQ(cmd, "ADPS ")) {
 		// warn everyone to turn things off because the breaker is going to blow
 		system("cd ../power_warning; ./warn_power.sh ''");
-		system("echo 'ADPS warning ' | mail root");
 		print = true;
 	} else if (STREQ(cmd, "PAPP ")) {
 		int papp = atoi(cmd + 5);
