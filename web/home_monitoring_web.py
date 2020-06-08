@@ -54,8 +54,8 @@ def rrdfile(name):
 last_electricity_power = -1
 last_electricity_index = -1
 last_temperature = { 'pantry' : 20.0, 'officeAH' : 21.0, 'exterior' : 19.0, 'living' : 19.0, 'bed' : 19.0, 'kidbed' : 19.0 }
-last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 01), 'bed' : datetime(2015, 12, 01), 'kidbed' : datetime(2015, 12, 01) }
-last_alarm_date = defaultdict(lambda: datetime(2014, 01, 01))
+last_temperature_date = { 'pantry' : datetime(2014, 12, 31), 'officeAH' : datetime(2014, 12, 31), 'exterior' : datetime(2014, 12, 31), 'living' : datetime(2015, 12, 1), 'bed' : datetime(2015, 12, 1), 'kidbed' : datetime(2015, 12, 1) }
+last_alarm_date = defaultdict(lambda: datetime(2014, 1, 1))
 last_alarm_sensor = defaultdict(lambda: 'UNKNOWN')
 last_battery_level = { 'exterior_thermometer' : 0, 'mailbox' : 0, 'gas' : 0 }
 last_solar_current = { 'exterior_thermometer' : 0 }
@@ -234,7 +234,7 @@ def show_nice_alarm_sensors():
 		items.append(dict(name=n,status=s,date=last_alarm_date[n]))
 
 	table = ItemTable(items)
-	return table.__html__()
+	return '<meta http-equiv="refresh" content="1">' + table.__html__()
 
 @app.route("/last/<feed_class>/")
 @app.route("/last/<feed_class>/<feed_field>")
