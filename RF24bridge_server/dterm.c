@@ -83,7 +83,6 @@
  */
 #include "speeds.h"
 
-#include "hub.h"
 
 extern void handle_serial_input_line(const char *cmd);
 
@@ -977,13 +976,6 @@ main(int argc, char **argv) {
 	fd = openport(device);
 	if(fd < 0) exit(1);
 
-	/* Initialize UDP socket */
-	udp_hub_init();
-	if (udp_hub_sockfd <= 0) {
-		fprintf(stderr, "Looks like UDP socket creation failed\n");
-		exit(2);
-	}
-
 	/*
 	 Main loop
 	 */
@@ -1002,8 +994,7 @@ main(int argc, char **argv) {
 		if(!readdelay) 
 			FD_SET(0, &fds);
 		FD_SET(fd, &fds);
-		FD_SET(udp_hub_sockfd, &fds);
-		i = select((fd > udp_hub_sockfd ? fd : udp_hub_sockfd) + 1, &fds, 0,0, readdelay);
+		i = select(fd + 1, &fds, 0,0, readdelay);
 		if(i == -1 && errno != EINTR)
 			DIEP("select");
 		if(i == 0 && readdelay)
@@ -1066,18 +1057,6 @@ main(int argc, char **argv) {
 					i = j;
 				}			
 				DATA_FROM_SERIAL(buf, i);
-			}
-		}
-
-		/* 
-		 Input on UDP 
-		 */
-		if (FD_ISSET(udp_hub_sockfd, &fds)) {
-			char *data;
-			data = udp_hub_consume();
-			for (int i = 0; i < strlen(data); i++) {
-				process_character(fd, data[i]);
-				millisleep(5);
 			}
 		}
 
