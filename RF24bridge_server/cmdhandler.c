@@ -128,7 +128,6 @@ static void rf24_line(const char *cmd)
 	uint8_t data[4];
 	uint8_t pipe_id;
 
-	// XXX this needs a pipe number too! can do without for now...
 	sscanf(cmd, "p%hhu %hhx %hhx %hhx %hhx", &pipe_id, &data[0], &data[1], &data[2], &data[3]); 
 
 	if (handle_rf24_cmd(pipe_id, data)) {

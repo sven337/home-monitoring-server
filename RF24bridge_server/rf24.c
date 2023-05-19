@@ -1,10 +1,26 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
 #include "mqtt_login.h"
 
 #define PIPE_LINKY_ID 3
 #define PIPE_THERMOMETER_ID 4
+
+static void mqtt_report(const char *prefix, const char *topic, const char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+
+	char message[256];
+	vsnprintf(message, 255, fmt, ap);
+
+	char command[2048];
+	sprintf(command,  "mosquitto_pub -h 192.168.1.6 -t '%s/%s' -u %s -P %s  -i rf24_updater -m '%s'", prefix, topic, MQTT_USER, MQTT_PASS, message);
+	system(command);
+	va_end(ap);
+}
 
 static int therm_message(uint8_t *p)
 {
@@ -13,6 +29,7 @@ static int therm_message(uint8_t *p)
 	char buf[1000];
 	uint16_t value;
 	int16_t temperature;
+	int temperature_error = 0;
 	float volt, level;
 	const char *location = "";
 
@@ -70,13 +87,66 @@ static int therm_message(uint8_t *p)
 	return 0;
 }
 
+static int linky_message(uint8_t *p)
+{
+	struct {
+		const char *name;
+		uint8_t frame_type;
+	} mapping[] = {
+			{ "BBRHCJB", 'b'}, //033487837 H
+			{ "BBRHPJB", 'B'}, //006345478 O
+			{ "BBRHCJW", 'w'}, //000000000 2
+			{ "BBRHPJW", 'W'}, //000000000 ?
+			{ "BBRHCJR", 'r'},  //000000000 -
+			{ "BBRHPJR", 'R'}, //000000000 :
+			{ "PAPP",    'P'}, //00000 !
+			{ "PTEC",    'J'}, //HPJB P
+			{ "DEMAIN",  'D'}, //---- "
+			{ "IINST",   'I'}, //003 Z
+			{ "ADPS",    'A'},
+	};
+
+	for (unsigned int i = 0; i < sizeof(mapping)/sizeof(mapping[0]); i++) {
+		if (!mapping[i].frame_type) {
+			continue;
+		}
+		if (mapping[i].frame_type != p[0]) {
+			continue;
+		}
+
+		// Found mapping, reconstitute data (if applicable) and report
+		const char *name = mapping[i].name;
+		char data[16] = { 0 };
+
+		// no special treatment for PTEC, DEMAIN, IINST, ADPS
+		memcpy(data, &p[1], 3);
+		if (!strcmp(name, "PAPP")) {
+			// Only 3 characters, add a zero at the end to reconstitute VA
+			data[3] = '0';
+		}
+
+		if (strstr(name, "BBRH")) {
+			// Indices are harder: we need 5-6 digits but we only get 3 so far (counting in kWh not even Wh).
+			// Find what to do... 
+		}
+		printf("linky: %s = %s\n", name, data);
+		mqtt_report("edf", name, "%s", data); 
+		
+		return 0;
+	}
+
+	return 1;
+}
+
+
 int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4]) 
 {
 	int error = 0;
 	switch (pipe_id) {
 		case PIPE_THERMOMETER_ID:
 			return therm_message(data);
-			break;
+		case PIPE_LINKY_ID:
+			return linky_message(data);
 		default:
 			error = 1;
 			fprintf(stderr, "Received message on unknown pipe id %d: %c %c %c %c\n", pipe_id, data[0], data[1], data[2], data[3]);
