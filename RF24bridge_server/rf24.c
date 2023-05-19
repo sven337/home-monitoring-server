@@ -24,13 +24,16 @@ static int therm_message(uint8_t *p)
 			location = "kidbed";
 			break;
 		case 'L':
-			location = "living";
+			location = "jh";
 			break;
 		case 'P':
-			location = "pantry";
+			location = "pool";
 			break;
 		case 'B':
 			location = "bed";
+			break;
+		case 'R':
+			location = "rochelle";
 			break;
 		default:
 			UNK;
@@ -41,15 +44,20 @@ static int therm_message(uint8_t *p)
 			value = p[2] << 8 | p[3];
 			volt = value*3.3f/1024; //no voltage divider so no 2*
 			level = (volt-0.8)/(1.5-0.8); //boost cutoff at 0.8
-			printf("Thermometer %s battery level: %fV = %f%% n", location, volt, 100*level);
-			sprintf(buf, "curl http://192.168.1.6:5000/update/battery_level/%s_thermometer/%d", location, (int)(100*level));
+			printf("Thermometer %s battery level: %.2fV = %f%% n", location, volt, 100*level);
+			sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/battery' -u %s -P %s  -i rf24_updater -m '%d'", location, MQTT_USER, MQTT_PASS, (int)(100*level));
 			system(buf);
 			break;
 		case 'T':
 			temperature = p[2] << 8 | p[3];
-			printf("Thermometer %s temperature: %f°C\n", location, temperature/16.0f);
-			sprintf(buf, "curl http://192.168.1.6:5000/update/temperature/%s/%f", location, temperature/16.0f);
-			system(buf);
+			if (temperature == (int16_t)0xFFFF) {
+				temperature_error = 1;
+			}
+			printf("Thermometer %s temperature: %.1f°C\n", location, temperature/16.0f);
+			if (!temperature_error) {
+				sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/temperature' -u %s -P %s -r -i rf24_updater -m '%.1f'", location, MQTT_USER, MQTT_PASS, temperature/16.0f);
+				system(buf);
+			}
 			break;
 		case 'F':
 			printf("Thermometer %s reports no ACK received when sending temperature\n", location);
