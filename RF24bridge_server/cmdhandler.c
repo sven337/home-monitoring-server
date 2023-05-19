@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <inttypes.h>
-
+#include "mqtt_login.h"
 extern int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4]);
 
 static int teleinfo_last_index = 0;
@@ -21,7 +21,9 @@ static int teleinfo_accumulate_PAPP(int papp)
 	if (cnt == 60) {
 		int val = accum / cnt;
 		char buf[2048];
-		sprintf(buf, "curl http://192.168.1.6:5000/update/electricity/%d,%d", val, teleinfo_last_index);
+		sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t 'edf/PAPP'  -u %s -P %s  -i teleinfo_updater -r -m '%d'", MQTT_USER, MQTT_PASS, val);
+		system(buf);
+		sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t 'edf/index' -u %s -P %s  -i teleinfo_updater -r -m '%d'", MQTT_USER, MQTT_PASS, teleinfo_last_index);
 		system(buf);
 		accum = 0;
 		cnt = 0;
