@@ -125,9 +125,10 @@ static int linky_message(uint8_t *p)
 			data[3] = '0';
 		}
 
-		if (strstr(name, "BBRH")) {
-			// Indices are harder: we need 5-6 digits but we only get 3 so far (counting in kWh not even Wh).
-			// Find what to do... 
+		if (!strncmp(name, "BBRH", 4)) {
+			uint32_t val = p[1] << 16 | p[2] << 8 | p[3];
+			val <<= 6;
+			sprintf(data, "%d", val);
 		}
 		printf("linky: %s = %s\n", name, data);
 		mqtt_report("edf", name, "%s", data); 
