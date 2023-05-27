@@ -130,6 +130,12 @@ static int linky_message(uint8_t *p)
 			val <<= 6;
 			sprintf(data, "%d", val);
 		}
+
+		if (!strcmp(name, "ADPS")) {
+			// warn everyone to turn things off because the breaker is going to blow
+			system("cd ../power_warning; ./warn_power.sh ''");
+		}
+
 		printf("linky: %s = %s\n", name, data);
 		mqtt_report("edf", name, "%s", data); 
 		
