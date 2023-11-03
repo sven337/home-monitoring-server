@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <time.h>
 #include "mqtt_login.h"
 
 #define PIPE_LINKY_ID 3
@@ -61,7 +62,7 @@ static int therm_message(uint8_t *p)
 			value = p[2] << 8 | p[3];
 			volt = value*3.3f/1024; //no voltage divider so no 2*
 			level = (volt-0.8)/(1.5-0.8); //boost cutoff at 0.8
-			printf("Thermometer %s battery level: %.2fV = %f%% n", location, volt, 100*level);
+			printf("Thermometer %s battery level: %.2fV = %f%%\n", location, volt, 100*level);
 			sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/battery' -u %s -P %s  -i rf24_updater -m '%d'", location, MQTT_USER, MQTT_PASS, (int)(100*level));
 			system(buf);
 			break;
@@ -104,6 +105,7 @@ static int linky_message(uint8_t *p)
 			{ "DEMAIN",  'D'}, //---- "
 			{ "IINST",   'I'}, //003 Z
 			{ "ADPS",    'A'},
+			{ "supply",  'S'}, // supply information - not linky
 	};
 
 	for (unsigned int i = 0; i < sizeof(mapping)/sizeof(mapping[0]); i++) {
@@ -117,6 +119,29 @@ static int linky_message(uint8_t *p)
 		// Found mapping, reconstitute data (if applicable) and report
 		const char *name = mapping[i].name;
 		char data[16] = { 0 };
+
+		if (!strcmp(name, "supply")) {
+			uint16_t value;
+			float volt, level;
+			switch (p[1]) {
+				case 'V':
+					// Battery voltage
+					value = p[2] << 8 | p[3];
+					volt = value*3.3f/1024; //no voltage divider so no 2*
+					level = (volt-0.8)/(1.5-0.8); //boost cutoff at 0.8
+					printf("Linky reporter battery level: %.2fV = %f%%\n", volt, 100*level);
+					mqtt_report("edf", "battery_voltage", "%.2f", volt);
+					return 0;
+				case 'S':
+					// Solar voltage
+				case 'C':
+					// Solar current
+					printf("XXX linky solar not implemented\n");
+					return 0;
+				default: 
+					return 1;
+			}
+		}
 
 		// no special treatment for PTEC, DEMAIN, IINST, ADPS
 		memcpy(data, &p[1], 3);
@@ -133,7 +158,17 @@ static int linky_message(uint8_t *p)
 
 		if (!strcmp(name, "ADPS")) {
 			// warn everyone to turn things off because the breaker is going to blow
-			system("cd ../power_warning; ./warn_power.sh ''");
+			// No beep between 10PM and 8AM
+			time_t t = time(NULL);
+			struct tm *tm = localtime(&t);
+			char hour_of_day_str[10];
+			unsigned int hour_of_day;
+			strftime(hour_of_day_str, 10, "%H", tm);
+			hour_of_day = atoi(hour_of_day_str);
+
+			if (hour_of_day >= 8 && hour_of_day < 22) {
+				system("cd ../power_warning; ./warn_power.sh ''");
+			}
 		}
 
 		printf("linky: %s = %s\n", name, data);
