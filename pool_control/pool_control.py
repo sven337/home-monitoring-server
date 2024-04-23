@@ -64,6 +64,7 @@ class PoolTimeTracker:
         self.pump_status = None
         self.pump_started_at = None
         self.last_set_pump_at = 0
+        self.filter_more_today = 0
         self.check_day_change()
 
     # Check if new day -> reset counters
@@ -72,6 +73,7 @@ class PoolTimeTracker:
         if time.time() > self.next_reset_counters_at:
             self.next_reset_counters_at = datetime.datetime.combine(datetime.date.today() + datetime.timedelta(days=1), datetime.time(6,0)).timestamp()
             self.elapsed_filtration_hours = 0
+            self.filter_more_today = 0
 
     # Get run time for the current cycle
     def get_pump_current_cycle_run_time(self):
@@ -100,6 +102,7 @@ class PoolTimeTracker:
             self.elapsed_filtration_hours += self.get_pump_current_cycle_run_time()
   
     def update_target_filtration_hours(self):
+        self.check_day_change()
         # Calculate filtration time based on pool temperature...
         t = pool_temperature.get() 
         if t < 15: # includes case -1 = invalid value
@@ -128,10 +131,13 @@ class PoolTimeTracker:
         # Always ensure a daily minimum of 2h of runtime
         if self.target_filtration_hours < 2:
             self.target_filtration_hours = 2
+
+        self.target_filtration_hours += self.filter_more_today
         
 
     # Change the pump status. Block changes more often than every N minutes
     def set_pump(self, pump_state, force = False):
+        self.check_day_change()
         # Implement hysteresis (for testing: 60s, production should be higher)
         if not force and time.time() - self.last_set_pump_at < 60:
             return
@@ -161,7 +167,9 @@ class InjectionTracker:
         self.power_state = 1 # 1 for consumption, -1 for injection
         self.power_state_since = 0 # time at which state changed last
         self.ADPS_until = 0
-        self.PTEC = ""
+        self.electricity_is_expensive = False
+        self.net_power_ema = 1000
+        self.last_net_power_at = 0
 
     def __str__(self):
         s = ""
@@ -172,6 +180,7 @@ class InjectionTracker:
         elif self.power_state == -1:
             s += "Injecting "
         s += "since %s\n" % str(datetime.datetime.fromtimestamp(self.power_state_since))
+        s += "Net power (EMAd) %.0f\n" % self.net_power_ema
         return s
     
     def notify_PTEC(self, PTEC):
@@ -192,16 +201,15 @@ class InjectionTracker:
         self.ADPS_until = time.time() + 30 * 60
 
     def injecting_pump_start_decision(self, pwr):
-
         # XXX take into account current solar production regardless of injection
 
         # Solar production usefully ends at 18h
-        remaining_solar_hours = (datetime.datetime.combine(datetime.date.today() + datetime.time(18,0)) - datetime.datimetime.now()).total_seconds() / 3600
+        remaining_solar_hours = (datetime.datetime.combine(datetime.date.today(), datetime.time(18,0)) - datetime.datetime.now()).total_seconds() / 3600
 
-        if pwr < -1000:
-            # start pump if injecting more than 1000W regardless of current runtime, simple case
+        if pwr < -1100:
+            # start pump if injecting more than 1100W regardless of current runtime, simple case
             pool_time_tracker.set_pump(1)
-            log("injecting more than 1000W: start pump (filtration is " + ("REQUIRED" if pool_time_tracker.remaining_pump_hours() > 0 else "OPTIONAL") + ")")
+            log("injecting more than 1100W: start pump (filtration is " + ("REQUIRED" if pool_time_tracker.remaining_pump_hours() > 0 else "OPTIONAL") + ")")
             #  XXX track total optional time
             return
 
@@ -212,6 +220,13 @@ class InjectionTracker:
 
         if pool_time_tracker.remaining_pump_hours() <= 0:
             # Pump has run long enough already
+            return
+        
+        if pwr < -1000:
+            # start pump if injecting more than 1000W and more hours are needed
+            pool_time_tracker.set_pump(1)
+            log("injecting more than 1000W: start pump (filtration is " + ("REQUIRED" if pool_time_tracker.remaining_pump_hours() > 0 else "OPTIONAL") + ")")
+            #  XXX track total optional time
             return
 
         if pool_time_tracker.remaining_pump_hours() > remaining_solar_hours:
@@ -229,8 +244,9 @@ class InjectionTracker:
 
     def consuming_pump_stop_decision(self, pwr):
         house_power_stop_pump_threshold = 500
+        hour = datetime.datetime.now().hour
 
-        if electricity_is_expensive:
+        if self.electricity_is_expensive:
             house_power_stop_pump_threshold = 300
 
         if hour > 11 and hour < 13:
@@ -239,14 +255,24 @@ class InjectionTracker:
 
         # Ran long enough? stop aggressively
         if pool_time_tracker.remaining_pump_hours() < 0:
-            house_power_stop_pump_threshold = 200
+            house_power_stop_pump_threshold = 100
 
         if pwr > house_power_stop_pump_threshold:
             pool_time_tracker.set_pump(0)
-            log("consuming more than %d W: stop pump")
+            log("consuming more than %d W: stop pump" % house_power_stop_pump_threshold)
 
     def notify_net_house_power(self, pwr):
         # Receive notification of net power
+# this can be redundant notifications! debounce me XXX
+
+        # Ignore redundant notifications every 10 sec
+        if time.time() - self.last_net_power_at < 10:
+            return
+
+        self.last_net_power_at = time.time()
+
+        self.net_power_ema += pwr
+        self.net_power_ema /= 2
 
         # XXX track opportunity costs of injected unused power if pump isn't running
 
@@ -262,7 +288,8 @@ class InjectionTracker:
         si à 13h je produis 500W alors je peux supposer que ça s'améliorera pas dans la journée donc j'envoie la sauce, sachant que la filtration peut aussi se faire de nuit mais c'est moins utile/efficace'''
 
         hour = datetime.datetime.now().hour
-        if pwr < 0:
+
+        if self.net_power_ema < 0:
             # Injection
             if self.power_state == 1:
                 self.power_state = -1
@@ -273,7 +300,7 @@ class InjectionTracker:
                     return
                 if time.time() - self.power_state_since > 60 * 10:
                     # Been injecting for 10 minutes?
-                    self.injecting_pump_start_decision(pwr)
+                    self.injecting_pump_start_decision(self.net_power_ema)
         else:
             # are we consuming and used not to? track the start point
             if self.power_state == -1:
@@ -285,17 +312,7 @@ class InjectionTracker:
                     # Nothing to do if pump is already off
                     return
                 if time.time() - self.power_state_since > 60 * 10:
-                    if pwr > 200 and hour > 11 and hour < 13:
-                        # Free up some power between 11 and 13 if not injecting
-                        pool_time_tracker.set_pump(0)
-                        log("consuming more than 100W and between 11 and 13h: stop pump")
-                    elif pwr > 300 and hour < 13:
-                        # Stop pump if consuming more than 300W before 13h (peak prod)
-                        pool_time_tracker.set_pump(0)
-                        log("consuming more than 300W and earlier than 13h: stop pump")
-                    elif pwr > 500:
-                        # Stop pump if consuming more than 500W
-                        pool_time_tracker.set_pump(0)
+                    self.consuming_pump_stop_decision(self.net_power_ema)
                 
 def cb_netpower(client, userdata, msg):
     p = float(msg.payload)
@@ -319,6 +336,13 @@ def cb_relaystate(client, userdata, msg):
     else:
         print("unknown pool relay state " + msg)
 
+def cb_filter_more_today(client, userdata, msg):
+    msg = msg.payload.decode('ascii')
+    timeadd = float(msg)
+    pool_time_tracker.filter_more_today = timeadd
+    pool_time_tracker.update_target_filtration_hours() 
+    log("manual override of filter time %d"  % timeadd)
+
 def status():
     return str(injection_tracker) + "\n" + str(pool_time_tracker) + \
            "\nPool temperature: %.1f\n Exterior temperature: %.1f\n%s\n" % (pool_temperature.get(), exterior_temperature.get(), last_msg)
@@ -328,7 +352,24 @@ def log(msg):
     last_msg = msg
     print(msg)
     mqtt.publish('pool_control/log', msg)
-    
+
+def mqtt_publish_status():
+    global last_msg
+    mqtt.publish("pool_control/available", "online", qos=1, retain=True);
+    if last_msg != "": 
+        mqtt.publish("pool_control/log", last_msg)
+    last_msg = ""
+
+    mqtt.publish("pool_control/power_direction", injection_tracker.power_state)
+    mqtt.publish("pool_control/power_direction_for", "%d" % (time.time() - injection_tracker.power_state_since))
+    mqtt.publish("pool_control/ADPS_for", "%d" % (injection_tracker.ADPS_until - time.time()))
+    mqtt.publish("pool_control/target_filtration_hours", "%.1f" % pool_time_tracker.target_filtration_hours);
+    mqtt.publish("pool_control/elapsed_filtration_hours", "%.1f" %  pool_time_tracker.get_pump_total_run_time());
+    mqtt.publish("pool_control/remaining_filtration_hours", "%.1f" %  pool_time_tracker.remaining_pump_hours());
+    mqtt.publish("pool_control/pump_status", pool_time_tracker.pump_status);
+    mqtt.publish("pool_control/net_power_EMAd", "%.0f" % injection_tracker.net_power_ema);
+    mqtt.publish("pool_control/filter_more_today", pool_time_tracker.filter_more_today);
+
 injection_tracker = InjectionTracker()
 pool_time_tracker = PoolTimeTracker()
 
@@ -341,17 +382,31 @@ subscriptions = {
     'pool_thermometer/temperature' : cb_pooltemp,
     'exterior_thermometer/temperature' : cb_exteriortemp,
     'zigbee2mqtt/smartrelay_piscine/state' : cb_relaystate,
+    'pool_control/send_status' : mqtt_publish_status,
+    'pool_control/filter_more_today/set' : cb_filter_more_today,
 }
 
-mqtt = mqtt.Client("poolpumpcontrol")
+mqtt = mqtt.Client("pool_control")
 mqtt.username_pw_set(**mqtt_creds.auth)
+
+mqtt.will_set("pool_control/available", "offline", qos=1, retain=True)
 mqtt.connect(mqtt_creds.hostname, 1883)
 mqtt.loop_start()
 
+# Subscribe to all var tracking topics
 for k, v in subscriptions.items():
     mqtt.message_callback_add(k, v)
     mqtt.subscribe(k)
 
-# Request relay status
+# Request relay status from Z2M
 mqtt.publish('zigbee2mqtt/smartrelay_piscine/get/state', '')
+# ...ideally, would do the same for temperatures but that is not available (RF24bridge would need to be updated)
+
+def run_forever():
+    send_next_ping_at = 0
+    while True:
+        if time.time() > send_next_ping_at:
+            send_next_ping_at = time.time() + 300
+            mqtt_publish_status()
+
 
