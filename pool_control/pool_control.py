@@ -10,7 +10,7 @@ import mqtt_creds
 # MQTT var tracking when it was last seen and default value. Takes a timeout in seconds
 class mqtt_var:
 
-    def __init__(self, name, default_value, timeout=60):
+    def __init__(self, name, default_value, timeout=300):
         self.__name = name
         self.__last_seen = 0
         self.__value = default_value
@@ -37,8 +37,8 @@ house_apparent_power = mqtt_var("PAPP", -1)
 house_net_power = mqtt_var("net power", -1)
 # solar production
 solar_power = mqtt_var("solar prod", -1)
-pool_temperature = mqtt_var("pool temperature", -1)
-exterior_temperature = mqtt_var("exterior temperature", 10)
+pool_temperature = mqtt_var("pool temperature", -1, timeout=3600)
+exterior_temperature = mqtt_var("exterior temperature", 10, timeout=3600)
 
 last_msg = ""
 
@@ -103,6 +103,8 @@ class PoolTimeTracker:
   
     def update_target_filtration_hours(self):
         self.check_day_change()
+        old_target = self.target_filtration_hours
+
         # Calculate filtration time based on pool temperature...
         t = pool_temperature.get() 
         if t < 15: # includes case -1 = invalid value
@@ -128,11 +130,18 @@ class PoolTimeTracker:
             # If it's cold, filter less
             self.target_filtration_hours -= 1
 
-        # Always ensure a daily minimum of 2h of runtime
+        # Always ensure a daily minimum of 2h of runtime...
         if self.target_filtration_hours < 2:
             self.target_filtration_hours = 2
 
+        # ... except for the manual override
         self.target_filtration_hours += self.filter_more_today
+
+        if self.target_filtration_hours < 0:
+            self.target_filtration_hours = 0
+
+        if old_target != self.target_filtration_hours:
+            log("Changing target filtration hours from %.1f to %.1f" % (old_target, self.target_filtration_hours))
         
 
     # Change the pump status. Block changes more often than every N minutes
@@ -149,7 +158,7 @@ class PoolTimeTracker:
         elif pump_state == 1:
             pump_state = "ON"
 
-        print("Changing relay to " + pump_state)
+        log("Changing relay to " + pump_state)
         mqtt.publish('zigbee2mqtt/smartrelay_piscine/set', pump_state)
 
             
@@ -342,6 +351,7 @@ def cb_filter_more_today(client, userdata, msg):
     pool_time_tracker.filter_more_today = timeadd
     pool_time_tracker.update_target_filtration_hours() 
     log("manual override of filter time %d"  % timeadd)
+    mqtt_publish_status()
 
 def status():
     return str(injection_tracker) + "\n" + str(pool_time_tracker) + \
@@ -382,7 +392,7 @@ subscriptions = {
     'pool_thermometer/temperature' : cb_pooltemp,
     'exterior_thermometer/temperature' : cb_exteriortemp,
     'zigbee2mqtt/smartrelay_piscine/state' : cb_relaystate,
-    'pool_control/send_status' : mqtt_publish_status,
+    'pool_control/send_status' : lambda x,y,z: mqtt_publish_status(),
     'pool_control/filter_more_today/set' : cb_filter_more_today,
 }
 
@@ -409,4 +419,5 @@ def run_forever():
             send_next_ping_at = time.time() + 300
             mqtt_publish_status()
 
-
+if __name__ == "__main__":
+        run_forever()
