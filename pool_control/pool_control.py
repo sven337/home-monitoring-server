@@ -93,13 +93,14 @@ class PoolTimeTracker:
         if state == self.pump_status:
             # Nothing changed? bail
             return
-        self.pump_status = state
-        if self.pump_status == 1:
+        if state == 1:
             # Pump just turned on, start counting
             self.pump_started_at = time.time()
         else:
             # Pump just turned off, stop counting
             self.elapsed_filtration_hours += self.get_pump_current_cycle_run_time()
+        # Change pump_status after updating the accounting, not before!
+        self.pump_status = state
   
     def update_target_filtration_hours(self):
         self.check_day_change()
