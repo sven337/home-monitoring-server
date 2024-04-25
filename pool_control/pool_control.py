@@ -65,6 +65,7 @@ class PoolTimeTracker:
         self.pump_started_at = None
         self.last_set_pump_at = 0
         self.filter_more_today = 0
+        self.night_start_at = 0
         self.check_day_change()
 
     # Check if new day -> reset counters
@@ -74,6 +75,7 @@ class PoolTimeTracker:
             self.next_reset_counters_at = datetime.datetime.combine(datetime.date.today() + datetime.timedelta(days=1), datetime.time(6,0)).timestamp()
             self.elapsed_filtration_hours = 0
             self.filter_more_today = 0
+            self.night_start_at = 0
 
     # Get run time for the current cycle
     def get_pump_current_cycle_run_time(self):
@@ -144,12 +146,53 @@ class PoolTimeTracker:
         if old_target != self.target_filtration_hours:
             log("Changing target filtration hours from %.1f to %.1f" % (old_target, self.target_filtration_hours))
         
+    
+    # At night, there is no solar production, but filtration may need to run:
+    #   - in winter to prevent icing (3-5AM)
+    #   - rest of the time if not enough filtration happened during the day
+    def night_cycle_tick(self):
+        hour = datetime.datetime.now().hour
+        night = hour > 21 and hour < 6
+
+        # Not at night? do nothing and let the rest run
+        if not night:
+            return False
+    
+        # Allow pumping between 2 and 5
+        if hour < 2 or hour > 5:
+            # ... if outside of this time, stop the pump, and eat the event
+            self.set_pump(0)
+            return True
+
+        r = self.remaining_pump_hours()
+
+        # Ran long enough during the day already?
+        if r <= 0:
+            self.set_pump(0)
+            return True
+
+        # If the pump is not running, decide when to start it,  so that it stops at 5AM
+        if self.night_start_at == 0:
+            start_offset = (5.0 - r) * 3600
+            stop_time = datetime.datetime.combine(datetime.date.today(), datetime.time(5, 0)).timestamp()
+            self.night_start_at = stop_time - start_offset
+
+        if time.time() > self.night_start_at:
+            self.set_pump(1)
+
+        return True
+           
+
 
     # Change the pump status. Block changes more often than every N minutes
     def set_pump(self, pump_state, force = False):
         self.check_day_change()
         # Implement hysteresis (for testing: 60s, production should be higher)
         if not force and time.time() - self.last_set_pump_at < 60:
+            return
+        
+        # Eat duplicate events - makes caller logic easier
+        if self.pump_state == state:
             return
 
         self.last_set_pump_at = time.time()
@@ -168,6 +211,8 @@ class PoolTimeTracker:
         s += '''Reset counters on ''' + str(datetime.datetime.fromtimestamp(self.next_reset_counters_at)) 
         s += '''\nPump is ''' + ("ON" if self.pump_status else "OFF")
         return s
+
+
             
 
 
@@ -241,7 +286,8 @@ class InjectionTracker:
             #  XXX track total optional time
             return
 
-        if pool_time_tracker.remaining_pump_hours() > remaining_solar_hours:
+        if pool_time_tracker.remaining_pump_hours() - 3 > remaining_solar_hours:
+            # can run up to 3h at night if need be 
             log("not injecting enough, but pump still-required runtime exceeds 18h: start pump")
             pool_time_tracker.set_pump(1)
             return
@@ -265,9 +311,9 @@ class InjectionTracker:
             # Free up some power between 11 and 13 for cooking if not injecting
             house_power_stop_pump_threshold = 200
 
-        # Ran long enough? stop aggressively
-        if pool_time_tracker.remaining_pump_hours() < 0:
-            house_power_stop_pump_threshold = 100
+        # Ran long enough? stop aggressively (can run up to 3 hours at night if need be)
+        if pool_time_tracker.remaining_pump_hours() <= 3:
+            house_power_stop_pump_threshold = 100 #XXX will have no effect due to caller threshold at abs()> 200
 
         if pwr > house_power_stop_pump_threshold:
             pool_time_tracker.set_pump(0)
@@ -275,34 +321,29 @@ class InjectionTracker:
 
     def notify_net_house_power(self, pwr):
         # Receive notification of net power
-# this can be redundant notifications! debounce me XXX
 
-        # Ignore redundant notifications every 10 sec
-        if time.time() - self.last_net_power_at < 10:
+        # Ignore redundant notifications every 15 sec
+        if time.time() - self.last_net_power_at < 15:
             return
-
         self.last_net_power_at = time.time()
 
+        # EMA the incoming power data to smooth it out
         self.net_power_ema *=4
         self.net_power_ema += pwr
         self.net_power_ema /= 5
-
-        # XXX track opportunity costs of injected unused power if pump isn't running
 
         # ADPS
         if time.time() < self.ADPS_until:
             print("ADPS: pump is off")
             pool_time_tracker.set_pump(0, force = True)
             return
+        
+        # if at night, no injection tracking to do,
+        #    let night_cycle_tick consume the event
+        if pool_time_tracker.night_cycle_tick():
+            return
 
-        '''
-        le moduler par la période tarifaire (si élec chère = diviser par 2, de toute façon ça correspond aux jours où la prod PV est pas ouf), le moduler par la température extérieure (si froid = réduire, si chaud = augmenter un peu comme proxy pour "il y a des baigneurs dedans")
-        et après un truc linéaire par rapport à l'heure du jour, genre à 10h tu vas pas déclencher parce que t'as le temps d'espérer avoir un peu de prod PV, par contre à 13h qui correspond à mon pic de production
-        si à 13h je produis 500W alors je peux supposer que ça s'améliorera pas dans la journée donc j'envoie la sauce, sachant que la filtration peut aussi se faire de nuit mais c'est moins utile/efficace'''
-
-        hour = datetime.datetime.now().hour
-
-        if self.net_power_ema < 0:
+        if self.net_power_ema < -100:
             # Injection
             if self.power_state == 1:
                 self.power_state = -1
@@ -314,7 +355,7 @@ class InjectionTracker:
                 if time.time() - self.power_state_since > 60 * 10:
                     # Been injecting for 10 minutes?
                     self.injecting_pump_start_decision(self.net_power_ema)
-        else:
+        elif self.net_power_ema > 100:
             # are we consuming and used not to? track the start point
             if self.power_state == -1:
                 self.power_state = 1
@@ -419,9 +460,13 @@ mqtt.publish('zigbee2mqtt/smartrelay_piscine/get/state', '')
 def run_forever():
     send_next_ping_at = 0
     while True:
+        # Send MQTT status periodically
         if time.time() > send_next_ping_at:
             send_next_ping_at = time.time() + 300
             mqtt_publish_status()
+
+        time.sleep(1)
+        
 
 if __name__ == "__main__":
         run_forever()
