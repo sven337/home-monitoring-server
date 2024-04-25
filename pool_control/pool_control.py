@@ -199,9 +199,11 @@ class InjectionTracker:
             # not really ADPS but it works the same - block until 22h
             self.electricity_is_expensive = True
             self.ADPS_until = datetime.datetime.combine(datetime.date.today(), datetime.time(22, 0)).timestamp()
+            return
         elif PTEC == "PJW":
             # HP JW = increase threshold to decide to filter
             self.electricity_is_expensive = True
+            return
         
         # Other cases proceed as normal. (PJB, CJB, CJR, HJW)
         self.electricity_is_expensive = False
@@ -226,7 +228,7 @@ class InjectionTracker:
         # What threshold to use to start the pump
         house_power_allow_pump_threshold = -100 
         if self.electricity_is_expensive:
-            house_power_allow_pump_threshold = -800
+            house_power_allow_pump_threshold = -900
 
         if pool_time_tracker.remaining_pump_hours() <= 0:
             # Pump has run long enough already
@@ -247,7 +249,7 @@ class InjectionTracker:
         # At this point, there is enough solar production time to cover the pump run time, if solar production can be expected to increase
         # peak production is at 13h, so if past 13h, start the pump whenever injecting, otherwise hold off until 13h
         hour = datetime.datetime.now().hour
-        if pwr < -house_power_allow_pump_threshold and hour >= 13:
+        if pwr < house_power_allow_pump_threshold and hour >= 13:
             log("not injecting enough, but peak production is over : start pump")
             pool_time_tracker.set_pump(1)
             return
@@ -281,8 +283,9 @@ class InjectionTracker:
 
         self.last_net_power_at = time.time()
 
+        self.net_power_ema *=4
         self.net_power_ema += pwr
-        self.net_power_ema /= 2
+        self.net_power_ema /= 5
 
         # XXX track opportunity costs of injected unused power if pump isn't running
 
