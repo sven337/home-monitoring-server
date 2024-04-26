@@ -152,7 +152,7 @@ class PoolTimeTracker:
     #   - rest of the time if not enough filtration happened during the day
     def night_cycle_tick(self):
         hour = datetime.datetime.now().hour
-        night = hour > 21 and hour < 6
+        night = hour > 21 or hour < 6
 
         # Not at night? do nothing and let the rest run
         if not night:
@@ -192,7 +192,7 @@ class PoolTimeTracker:
             return
         
         # Eat duplicate events - makes caller logic easier
-        if self.pump_state == state:
+        if self.pump_status == pump_state:
             return
 
         self.last_set_pump_at = time.time()
