@@ -173,7 +173,7 @@ class PoolTimeTracker:
 
         # If the pump is not running, decide when to start it,  so that it stops at 5AM
         if self.night_start_at == 0:
-            start_offset = (5.0 - r) * 3600
+            start_offset = r * 3600
             stop_time = datetime.datetime.combine(datetime.date.today(), datetime.time(5, 0)).timestamp()
             self.night_start_at = stop_time - start_offset
 
@@ -204,6 +204,7 @@ class PoolTimeTracker:
 
         log("Changing relay to " + pump_state)
         mqtt.publish('zigbee2mqtt/smartrelay_piscine/set', pump_state)
+        mqtt_publish_status()
 
             
     def __str__(self):
@@ -265,8 +266,8 @@ class InjectionTracker:
 
         if pwr < -1100:
             # start pump if injecting more than 1100W regardless of current runtime, simple case
-            pool_time_tracker.set_pump(1)
             log("injecting more than 1100W: start pump (filtration is " + ("REQUIRED" if pool_time_tracker.remaining_pump_hours() > 0 else "OPTIONAL") + ")")
+            pool_time_tracker.set_pump(1)
             #  XXX track total optional time
             return
 
