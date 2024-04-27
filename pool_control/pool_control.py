@@ -36,7 +36,7 @@ class mqtt_var:
 house_apparent_power = mqtt_var("PAPP", -1)
 house_net_power = mqtt_var("net power", -1)
 # solar production
-solar_power = mqtt_var("solar prod", -1)
+solar_power = mqtt_var("solar prod", -1, timeout=60)
 pool_temperature = mqtt_var("pool temperature", -1, timeout=3600)
 exterior_temperature = mqtt_var("exterior temperature", 10, timeout=3600)
 
@@ -287,8 +287,12 @@ class InjectionTracker:
             #  XXX track total optional time
             return
 
-        if pool_time_tracker.remaining_pump_hours() - 3 > remaining_solar_hours:
-            # can run up to 3h at night if need be 
+        # At this point there isn't enough injected power to run the pump
+        # It can run up to 3h at night if need be, so bail if remaining hours <= 3
+        if pool_time_tracker.remaining_pump_hours() <= 3:
+            return
+
+        if pool_time_tracker.remaining_pump_hours() > remaining_solar_hours:
             log("not injecting enough, but pump still-required runtime exceeds 18h: start pump")
             pool_time_tracker.set_pump(1)
             return
