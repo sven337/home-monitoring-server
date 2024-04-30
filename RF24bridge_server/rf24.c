@@ -128,29 +128,6 @@ static int linky_message(uint8_t *p)
 		const char *name = mapping[i].name;
 		char data[16] = { 0 };
 
-		if (!strcmp(name, "supply")) {
-			uint16_t value;
-			float volt, level;
-			switch (p[1]) {
-				case 'V':
-					// Battery voltage
-					value = p[2] << 8 | p[3];
-					volt = value*3.3f/1024; //no voltage divider so no 2*
-					level = (volt-0.8)/(1.5-0.8); //boost cutoff at 0.8
-					printf("Linky reporter battery level: %.2fV = %f%%\n", volt, 100*level);
-					mqtt_report("edf", "battery_voltage", "%.2f", volt);
-					return 0;
-				case 'S':
-					// Solar voltage
-				case 'C':
-					// Solar current
-					printf("XXX linky solar not implemented\n");
-					return 0;
-				default: 
-					return 1;
-			}
-		}
-
 		// no special treatment for PTEC, DEMAIN, IINST, ADPS
 		memcpy(data, &p[1], 3);
 		if (!strcmp(name, "PAPP")) {
