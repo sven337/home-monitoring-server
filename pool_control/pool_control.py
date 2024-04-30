@@ -333,9 +333,9 @@ class InjectionTracker:
         self.last_net_power_at = time.time()
 
         # EMA the incoming power data to smooth it out
-        self.net_power_ema *=4
+        self.net_power_ema *= 9
         self.net_power_ema += pwr
-        self.net_power_ema /= 5
+        self.net_power_ema /= 10
 
         # ADPS
         if time.time() < self.ADPS_until:
