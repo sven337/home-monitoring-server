@@ -63,8 +63,12 @@ static int therm_message(uint8_t *p)
 	switch (p[0]) {
 		case 'B':
 			value = p[2] << 8 | p[3];
-			volt = value*3.3f/1024; //no voltage divider so no 2*
+			volt = value*3.3f/1024;
+			/* Single cell */
 			level = (volt-0.8)/(1.5-0.8); //boost cutoff at 0.8
+			/* 2S: warn at 0.9V/cell = 1.8V to limit deep discharge */
+			level = (volt-1.8)/(2.75-1.8);
+
 			printf("Thermometer %s battery level: %.2fV = %f%%\n", location, volt, 100*level);
 			sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/battery' -u %s -P %s  -i rf24_updater -m '%d'", location, MQTT_USER, MQTT_PASS, (int)(100*level));
 			system(buf);
