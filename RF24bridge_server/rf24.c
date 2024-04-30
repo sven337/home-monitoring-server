@@ -76,7 +76,7 @@ static int therm_message(uint8_t *p)
 			}
 			printf("Thermometer %s temperature: %.1f°C\n", location, temperature/16.0f);
 			if (!temperature_error) {
-				sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/temperature' -u %s -P %s -r -i rf24_updater -m '%.1f'", location, MQTT_USER, MQTT_PASS, temperature/16.0f);
+				sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/temperature' -u %s -P %s -i rf24_updater -m '%.1f'", location, MQTT_USER, MQTT_PASS, temperature/16.0f);
 				system(buf);
 			}
 			break;
