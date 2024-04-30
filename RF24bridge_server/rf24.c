@@ -9,6 +9,9 @@
 #define PIPE_LINKY_ID 3
 #define PIPE_THERMOMETER_ID 4
 
+unsigned int gas_pulse_counter = 0;
+unsigned int water_pulse_counter = 0;
+
 static void mqtt_report(const char *prefix, const char *topic, const char *fmt, ...)
 {
 	va_list ap;
@@ -105,7 +108,8 @@ static int linky_message(uint8_t *p)
 			{ "DEMAIN",  'D'}, //---- "
 			{ "IINST",   'I'}, //003 Z
 			{ "ADPS",    'A'},
-			{ "supply",  'S'}, // supply information - not linky
+			{ "GAS", 'G' },
+			{ "WATER", 'E' },
 	};
 
 	for (unsigned int i = 0; i < sizeof(mapping)/sizeof(mapping[0]); i++) {
@@ -169,6 +173,19 @@ static int linky_message(uint8_t *p)
 			if (hour_of_day >= 8 && hour_of_day < 22) {
 				system("cd ../power_warning; ./warn_power.sh ''");
 			}
+
+			strcpy(data, "1"); // better looking than 30 (amps subscription)
+		}
+
+		if (!strcmp(name, "GAS")) {
+			gas_pulse_counter++;
+			// Each pulse is 10 liters, and 11.05kWh/m3
+			sprintf(data, "%.2f", gas_pulse_counter * 10.0 * 11.05 / 1000.0);
+		} 
+		
+		if (!strcmp(name, "WATER")) {
+			water_pulse_counter++;
+			sprintf(data, "%d", water_pulse_counter);
 		}
 
 		printf("linky: %s = %s\n", name, data);
