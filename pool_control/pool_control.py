@@ -225,6 +225,9 @@ class InjectionTracker:
         self.electricity_is_expensive = False
         self.net_power_ema = 1000
         self.last_net_power_at = 0
+        self.energy_free_pump = 0
+        self.energy_cost_pump = 0
+        self.energy_oppmissed_pump = 0
 
     def __str__(self):
         s = ""
@@ -256,6 +259,21 @@ class InjectionTracker:
     def notify_ADPS(self):
         # ADPS: cut everything for 30 minutes
         self.stopped_until = time.time() + 30 * 60
+
+    def track_energy_cost(self, pump_status, power, duration):
+        if pump_status:
+            if power <= 0:
+                # Pump is running and still injecting: we are using 1000W of free energy
+                self.energy_free_pump += (1000 * duration) / 3600 
+            else:
+                # Pump is running and consuming: we are paying for min(power, 1000) since more than 1000 is other things than the pump
+                self.energy_cost_pump += (min(power, 1000) * duration) / 3600
+        else:
+            if power < 1000:
+                # Pump is not running, but injecting enough to run it: lost opportunity to run
+                self.energy_oppmissed_pump += (1000 * duration) / 3600
+            
+
 
     def injecting_pump_start_decision(self, pwr):
         # XXX take into account current solar production regardless of injection
@@ -336,6 +354,7 @@ class InjectionTracker:
         # Ignore redundant notifications every 15 sec
         if time.time() - self.last_net_power_at < 15:
             return
+        last_net_power_at = self.last_net_power_at
         self.last_net_power_at = time.time()
 
         # EMA the incoming power data to smooth it out
@@ -353,6 +372,8 @@ class InjectionTracker:
         #    let night_cycle_tick consume the event
         if pool_time_tracker.night_cycle_tick():
             return
+        
+        self.track_energy_cost(pool_time_tracker.pump_status, pwr, time.time() - last_net_power_at)
 
         if self.net_power_ema < -100:
             # Injection
@@ -435,6 +456,9 @@ def mqtt_publish_status():
     mqtt.publish("pool_control/pump_status", pool_time_tracker.pump_status);
     mqtt.publish("pool_control/net_power_EMAd", "%.0f" % injection_tracker.net_power_ema);
     mqtt.publish("pool_control/filter_more_today", pool_time_tracker.filter_more_today);
+    mqtt.publish("pool_control/energy_free_pump", "%d" % injection_tracker.energy_free_pump);
+    mqtt.publish("pool_control/energy_cost_pump", "%d" % injection_tracker.energy_cost_pump);
+    mqtt.publish("pool_control/energy_oppmissed_pump", "%d" % injection_tracker.energy_oppmissed_pump);
 
 injection_tracker = InjectionTracker()
 pool_time_tracker = PoolTimeTracker()
