@@ -111,7 +111,6 @@ class PoolTimeTracker:
         # Calculate filtration time based on pool temperature...
         t = pool_temperature.get() 
         if t < 15: # includes case -1 = invalid value
-            # XX"Hivernage" 3h-5h handled externally in HA
             self.target_filtration_hours = 2
         elif t < 20:
             # 4h + 0.5h/degree above 15, so 16 is 4.5h and 20 is 6.5h
@@ -222,15 +221,15 @@ class InjectionTracker:
     def __init__(self):
         self.power_state = 1 # 1 for consumption, -1 for injection
         self.power_state_since = 0 # time at which state changed last
-        self.ADPS_until = 0
+        self.stopped_until = 0
         self.electricity_is_expensive = False
         self.net_power_ema = 1000
         self.last_net_power_at = 0
 
     def __str__(self):
         s = ""
-        if time.time() < self.ADPS_until:
-            s += 'ADPS until %s\n' % str(datetime.datetime.fromtimestamp(self.ADPS_until))
+        if time.time() < self.stopped_until:
+            s += 'ADPS until %s\n' % str(datetime.datetime.fromtimestamp(self.stopped_until))
         if self.power_state == 1:
             s += "Consuming "
         elif self.power_state == -1:
@@ -242,9 +241,9 @@ class InjectionTracker:
     def notify_PTEC(self, PTEC):
         if PTEC == "PJR":
             # HP JR = do not filter!!!
-            # not really ADPS but it works the same - block until 22h
+            # stop until 22h
             self.electricity_is_expensive = True
-            self.ADPS_until = datetime.datetime.combine(datetime.date.today(), datetime.time(22, 0)).timestamp()
+            self.stopped_until = datetime.datetime.combine(datetime.date.today(), datetime.time(22, 0)).timestamp()
             return
         elif PTEC == "PJW":
             # HP JW = increase threshold to decide to filter
@@ -256,7 +255,7 @@ class InjectionTracker:
            
     def notify_ADPS(self):
         # ADPS: cut everything for 30 minutes
-        self.ADPS_until = time.time() + 30 * 60
+        self.stopped_until = time.time() + 30 * 60
 
     def injecting_pump_start_decision(self, pwr):
         # XXX take into account current solar production regardless of injection
@@ -308,21 +307,28 @@ class InjectionTracker:
     def consuming_pump_stop_decision(self, pwr):
         house_power_stop_pump_threshold = 500
         hour = datetime.datetime.now().hour
+        # Force the pump to stay off for a certain duration when deciding to stop?
+        stop_duration = 0
 
         if self.electricity_is_expensive:
             house_power_stop_pump_threshold = 300
+            stop_duration = 30 * 60
 
         if hour > 11 and hour < 13:
             # Free up some power between 11 and 13 for cooking if not injecting
             house_power_stop_pump_threshold = 200
+            stop_duration = 30 * 60
 
         # Ran long enough? stop aggressively (can run up to 3 hours at night if need be)
         if pool_time_tracker.remaining_pump_hours() <= 3:
             house_power_stop_pump_threshold = 100 #XXX will have no effect due to caller threshold at abs()> 200
+            stop_duration = 30 * 60
 
         if pwr > house_power_stop_pump_threshold:
             pool_time_tracker.set_pump(0)
             log("consuming more than %d W: stop pump" % house_power_stop_pump_threshold)
+            if stop_duration > 0:
+                self.stopped_until = time.time() + stop_duration
 
     def notify_net_house_power(self, pwr):
         # Receive notification of net power
@@ -338,8 +344,8 @@ class InjectionTracker:
         self.net_power_ema /= 10
 
         # ADPS
-        if time.time() < self.ADPS_until:
-            print("ADPS: pump is off")
+        if time.time() < self.stopped_until:
+            print("Pump is forced off for %d minutes" % ((self.stopped_until - time.time()) / 60))
             pool_time_tracker.set_pump(0, force = True)
             return
         
@@ -422,7 +428,7 @@ def mqtt_publish_status():
 
     mqtt.publish("pool_control/power_direction", injection_tracker.power_state)
     mqtt.publish("pool_control/power_direction_for", "%d" % (time.time() - injection_tracker.power_state_since))
-    mqtt.publish("pool_control/ADPS_for", "%d" % (injection_tracker.ADPS_until - time.time()))
+    mqtt.publish("pool_control/ADPS_for", "%d" % (injection_tracker.stopped_until - time.time()))
     mqtt.publish("pool_control/target_filtration_hours", "%.1f" % pool_time_tracker.target_filtration_hours);
     mqtt.publish("pool_control/elapsed_filtration_hours", "%.1f" %  pool_time_tracker.get_pump_total_run_time());
     mqtt.publish("pool_control/remaining_filtration_hours", "%.1f" %  pool_time_tracker.remaining_pump_hours());
