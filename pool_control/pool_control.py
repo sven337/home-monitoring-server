@@ -72,10 +72,16 @@ class PoolTimeTracker:
     def check_day_change(self):
         # Reset counters every day at 6
         if time.time() > self.next_reset_counters_at:
+            log("Reset counters")
+            if self.pump_status:
+                log("Pump was on at reset counters time, should not happen")
+                self.set_pump(0)
+            
             self.next_reset_counters_at = datetime.datetime.combine(datetime.date.today() + datetime.timedelta(days=1), datetime.time(6,0)).timestamp()
             self.elapsed_filtration_hours = 0
             self.filter_more_today = 0
             self.night_start_at = 0
+
 
     # Get run time for the current cycle
     def get_pump_current_cycle_run_time(self):
@@ -158,8 +164,9 @@ class PoolTimeTracker:
             return False
     
         # Allow pumping between 2 and 5
-        if hour < 2 or hour > 5:
+        if hour < 2 or hour >= 5:
             # ... if outside of this time, stop the pump, and eat the event
+            log("Night cycle: stopping pump (past 5AM)")
             self.set_pump(0)
             return True
 
@@ -167,6 +174,7 @@ class PoolTimeTracker:
 
         # Ran long enough during the day already?
         if r <= 0:
+            log("Night cycle: stopping pump (target duration reached)")
             self.set_pump(0)
             return True
 
@@ -180,7 +188,19 @@ class PoolTimeTracker:
             self.set_pump(1)
 
         return True
-           
+        
+    def winter_cycle_tick(self):
+        month = datetime.datetime.now().month
+        # Between november and april, if water is below 10°, force 2h of filtration AT NIGHT
+        # in order to prevent icing
+        if month >= 11 and month <= 4 and pool_temperature.get < 10:
+            if self.night_start_at == 0:
+                # start at 3AM
+                self.night_start_at = datetime.datetime.combine(datetime.date.today(), datetime.time(3, 0)).timestamp()
+            return True
+
+          
+
 
 
     # Change the pump status. Block changes more often than every N minutes
@@ -229,6 +249,7 @@ class InjectionTracker:
         self.energy_free_opportunistic_pump = 0
         self.energy_cost_pump = 0
         self.energy_oppmissed_pump = 0
+        self.disabled_until = 0
 
     def __str__(self):
         s = ""
@@ -367,8 +388,12 @@ class InjectionTracker:
         self.net_power_ema *= 9
         self.net_power_ema += pwr
         self.net_power_ema /= 10
+        
+        # If currently disabled, do nothing
+        if self.disabled_until > time.time():
+           return
 
-        # ADPS
+        # ADPS/forced off
         if time.time() < self.stopped_until:
             print("Pump is forced off for %d minutes" % ((self.stopped_until - time.time()) / 60))
             pool_time_tracker.set_pump(0, force = True)
@@ -378,8 +403,13 @@ class InjectionTracker:
         #    let night_cycle_tick consume the event
         if pool_time_tracker.night_cycle_tick():
             return
-        
+      
         self.track_energy_cost(pool_time_tracker.pump_status, pwr, time.time() - last_net_power_at)
+
+        # if in winter (icing protection), night cycle is all we care about
+        # winter will prevent the rest from running, I do not inject enough in winter to run the pump anyway
+        if pool_time_tracker.winter_cycle_tick():
+            return 
 
         if self.net_power_ema < -100:
             # Injection
@@ -436,6 +466,13 @@ def cb_filter_more_today(client, userdata, msg):
     log("manual override of filter time %d"  % timeadd)
     mqtt_publish_status()
 
+def cb_disable_duration(client, userdata, msg):
+    msg = msg.payload.decode('ascii')
+    duration = int(msg)
+    injection_tracker.disabled_until = time.time() + duration * 60
+    log("Disabling for %d minutes" % duration)
+    mqtt_publish_status()
+    
 def status():
     return str(injection_tracker) + "\n" + str(pool_time_tracker) + \
            "\nPool temperature: %.1f\n Exterior temperature: %.1f\n%s\n" % (pool_temperature.get(), exterior_temperature.get(), last_msg)
@@ -444,7 +481,8 @@ def log(msg):
     global last_msg 
     last_msg = msg
     print(msg)
-    mqtt.publish('pool_control/log', msg)
+    if hasattr(mqtt, "publish"):
+        mqtt.publish('pool_control/log', msg)
 
 def mqtt_publish_status():
     global last_msg
@@ -455,7 +493,7 @@ def mqtt_publish_status():
 
     mqtt.publish("pool_control/power_direction", injection_tracker.power_state)
     mqtt.publish("pool_control/power_direction_for", "%d" % (time.time() - injection_tracker.power_state_since))
-    mqtt.publish("pool_control/ADPS_for", "%d" % (injection_tracker.stopped_until - time.time()))
+    mqtt.publish("pool_control/force_stop_for", "%d" % ((injection_tracker.stopped_until - time.time())/60))
     mqtt.publish("pool_control/target_filtration_hours", "%.1f" % pool_time_tracker.target_filtration_hours);
     mqtt.publish("pool_control/elapsed_filtration_hours", "%.1f" %  pool_time_tracker.get_pump_total_run_time());
     mqtt.publish("pool_control/remaining_filtration_hours", "%.1f" %  pool_time_tracker.remaining_pump_hours());
@@ -466,6 +504,7 @@ def mqtt_publish_status():
     mqtt.publish("pool_control/energy_free_opportunistic_pump", "%d" % injection_tracker.energy_free_opportunistic_pump);
     mqtt.publish("pool_control/energy_cost_pump", "%d" % injection_tracker.energy_cost_pump);
     mqtt.publish("pool_control/energy_oppmissed_pump", "%d" % injection_tracker.energy_oppmissed_pump);
+    mqtt.publish("pool_control/disabled_for", "%d" % ((injection_tracker.disabled_until - time.time())/60));
 
 injection_tracker = InjectionTracker()
 pool_time_tracker = PoolTimeTracker()
@@ -481,6 +520,7 @@ subscriptions = {
     'zigbee2mqtt/smartrelay_piscine/state' : cb_relaystate,
     'pool_control/send_status' : lambda x,y,z: mqtt_publish_status(),
     'pool_control/filter_more_today/set' : cb_filter_more_today,
+    'pool_control/disable_duration/set' : cb_disable_duration,
 }
 
 mqtt = mqtt.Client("pool_control")
