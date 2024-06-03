@@ -508,7 +508,10 @@ def mqtt_publish_status():
     mqtt.publish("pool_control/energy_free_opportunistic_pump", "%d" % injection_tracker.energy_free_opportunistic_pump);
     mqtt.publish("pool_control/energy_cost_pump", "%d" % injection_tracker.energy_cost_pump);
     mqtt.publish("pool_control/energy_oppmissed_pump", "%d" % injection_tracker.energy_oppmissed_pump);
-    mqtt.publish("pool_control/disabled_for", "%d" % ((injection_tracker.disabled_until - time.time())/60));
+    disabled_for = (injection_tracker.disabled_until - time.time())/60
+    if disabled_for < 0:
+        disabled_for = 0
+    mqtt.publish("pool_control/disabled_for", "%d" % (disabled_for));
 
 injection_tracker = InjectionTracker()
 pool_time_tracker = PoolTimeTracker()
