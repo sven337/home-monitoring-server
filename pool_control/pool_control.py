@@ -166,7 +166,7 @@ class PoolTimeTracker:
         # Allow pumping between 2 and 5
         if hour < 2 or hour >= 5:
             # ... if outside of this time, stop the pump, and eat the event
-            log("Night cycle: stopping pump (past 5AM)")
+            log("Night cycle: stopping pump (outside of 2AM-5AM range)")
             self.set_pump(0)
             return True
 
@@ -388,7 +388,11 @@ class InjectionTracker:
         self.net_power_ema *= 9
         self.net_power_ema += pwr
         self.net_power_ema /= 10
-        
+       
+        # First run through here
+        if last_net_power_at == 0: 
+            return
+
         # If currently disabled, do nothing
         if self.disabled_until > time.time():
            return
