@@ -47,14 +47,23 @@ def cb_ADPS(client, userdata, msg):
     injection_tracker.notify_ADPS()
 
 def cb_PAPP(client, userdata, msg):
-    house_apparent_power.set(int(msg.payload))
+    try:
+        value = int(msg.payload)
+        house_apparent_power.set(value)
+    except ValueError:
+        print(f"Received non-integer payload: {msg.payload}. Ignoring.")
+
     
 def cb_PTEC(client, userdata, msg):
     PTEC = msg.payload.decode('ascii')
     injection_tracker.notify_PTEC(PTEC)
 
 def cb_PVprod(client, userdata, msg):
-    solar_power.set(float(msg.payload))
+    try:
+        value = int(msg.payload)
+        pv_production.set(value)
+    except ValueError:
+        print(f"Received non-integer payload: {msg.payload}. Ignoring.")
 
 class PoolTimeTracker:
     def __init__(self):
@@ -133,7 +142,7 @@ class PoolTimeTracker:
         e = exterior_temperature.get()
         if e and e > 25:
             # If it's hot, filter more
-            self.target_filtration_hours += 2
+            self.target_filtration_hours += 1
         if e and e < 15:
             # If it's cold, filter less
             self.target_filtration_hours -= 1
@@ -395,6 +404,8 @@ class InjectionTracker:
 
         # If currently disabled, do nothing
         if self.disabled_until > time.time():
+           # XXX a potential bug is that we do not update power_state and power_state_since
+           # we should keep them up-to-date and simply avoid taking action instead of doing an early-out
            return
 
         # ADPS/forced off
