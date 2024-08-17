@@ -1,8 +1,11 @@
-To add a table of contents at the top of the provided markdown file, I'll generate it based on the headers present in the document. Here's the updated markdown with a table of contents:
-
 # home-monitoring-server
+============
 
-## Table of Contents
+Home automation - collection of my "server side" tools.
+Below is AI-generated description that is almost devoid of bullshit and generally accurate.
+
+
+# Table of Contents
 - [Swimming Pool Filtration Control System](#swimming-pool-filtration-control-system)
   - [Key Features](#key-features)
   - [System Components](#system-components)
@@ -18,11 +21,6 @@ To add a table of contents at the top of the provided markdown file, I'll genera
   - [Conclusion](#conclusion)
 - [RF24Bridge](#rf24bridge)
 
-home-monitoring-server
-============
-
-Home automation - collection of my "server side" tools.
-Below is AI-generated description that is almost devoid of bullshit and generally accurate.
 
 # Swimming Pool Filtration Control System
 
