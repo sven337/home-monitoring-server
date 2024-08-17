@@ -51,7 +51,7 @@ def cb_PAPP(client, userdata, msg):
         value = int(msg.payload)
         house_apparent_power.set(value)
     except ValueError:
-        print(f"Received non-integer payload: {msg.payload}. Ignoring.")
+        print(f"PAPP Received non-integer payload: {msg.payload}. Ignoring.")
 
     
 def cb_PTEC(client, userdata, msg):
@@ -60,10 +60,10 @@ def cb_PTEC(client, userdata, msg):
 
 def cb_PVprod(client, userdata, msg):
     try:
-        value = int(msg.payload)
-        pv_production.set(value)
+        value = float(msg.payload)
+        solar_power.set(value)
     except ValueError:
-        print(f"Received non-integer payload: {msg.payload}. Ignoring.")
+        print(f"PVprod Received non-float payload: {msg.payload}. Ignoring.")
 
 class PoolTimeTracker:
     def __init__(self):
