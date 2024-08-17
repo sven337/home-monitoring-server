@@ -1,3 +1,23 @@
+To add a table of contents at the top of the provided markdown file, I'll generate it based on the headers present in the document. Here's the updated markdown with a table of contents:
+
+# home-monitoring-server
+
+## Table of Contents
+- [Swimming Pool Filtration Control System](#swimming-pool-filtration-control-system)
+  - [Key Features](#key-features)
+  - [System Components](#system-components)
+    - [MQTT Variables](#mqtt-variables)
+    - [PoolTimeTracker](#pooltimetracker)
+    - [InjectionTracker](#injectiontracker)
+  - [Key Functions](#key-functions)
+    - [Filtration Time Calculation](#filtration-time-calculation)
+    - [Pump Control Logic](#pump-control-logic)
+    - [MQTT Integration](#mqtt-integration)
+  - [Usage and Configuration](#usage-and-configuration)
+  - [Home-assistant integration](#home-assistant-integration)
+  - [Conclusion](#conclusion)
+- [RF24Bridge](#rf24bridge)
+
 home-monitoring-server
 ============
 
