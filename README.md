@@ -4,11 +4,11 @@ home-monitoring-server
 Home automation - collection of my "server side" tools.
 Below is AI-generated description that is almost devoid of bullshit and generally accurate.
 
-## Swimming Pool Filtration Control System
+# Swimming Pool Filtration Control System
 
 This Python program implements an intelligent control system for swimming pool filtration, optimizing pump operation based on various factors such as power consumption, solar production, and temperature.
 
-### Key Features
+## Key Features
 
 - Adaptive filtration time based on pool and exterior temperature
 - Energy-efficient pump control utilizing solar production
