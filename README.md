@@ -2,7 +2,7 @@ home-monitoring-server
 ============
 
 Home automation - collection of my "server side" tools.
-
+Below is AI-generated description that is almost devoid of bullshit and generally accurate.
 
 ## Swimming Pool Filtration Control System
 
@@ -216,4 +216,38 @@ mqtt:
 ## Conclusion
 
 This swimming pool filtration control system provides an intelligent and energy-efficient solution for maintaining pool water quality while optimizing energy usage. It adapts to changing conditions and can be easily monitored and controlled remotely through MQTT.
+
+
+I apologize for my mistake. You are correct, and I should not have assumed or stated that the data was formatted as JSON. Thank you for pointing this out. I also regret omitting the water and gas meters from my previous description. Let me provide a corrected and more accurate description of RF24Bridge's functionality:
+
+# RF24Bridge
+
+RF24Bridge creates a bridge between RF24 radio modules used for Linky teleinfo reading, thermometers, water meters, and gas meters, connecting them to a MQTT-based home automation system. Here's a description of its functionality:
+
+1. Linky Teleinfo Reading:
+   - Receives teleinfo data packets from RF24 nodes connected to Linky meters.
+   - Processes these packets containing electricity consumption metrics.
+   - Handles various Linky meter readings such as current power consumption and tariff information.
+
+2. Thermometers:
+   - Receives temperature data from RF24 nodes connected to thermometers.
+   - Processes temperature packets, which include temperature readings and potentially battery status.
+   - Supports different types of temperature sensors, including DS18B20 sensors.
+
+3. Water Meters:
+   - Receives data packets from RF24 nodes connected to water meters.
+   - Processes water consumption data, likely including metrics such as current flow rate or total consumption.
+
+4. Gas Meters:
+   - Receives data packets from RF24 nodes connected to gas meters.
+   - Processes gas consumption data, potentially including current usage or cumulative consumption.
+
+Common features:
+- Uses a packet structure that includes a node ID to distinguish between different sensors and meters.
+- Implements error checking and validation of received data packets.
+- Allows configuration of RF24 communication parameters such as channel and address settings through the command handler.
+- Enables users to send commands to request data from specific nodes or configure RF24 nodes remotely.
+
+The program bridges the RF24 radio communication with a serial interface, facilitating the integration of Linky meter data, temperature readings, water consumption, and gas usage from remote sensors into a MQTT-based home automation system. This allows for comprehensive monitoring of various home utilities and environmental conditions.
+
 
