@@ -9,6 +9,7 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 import subprocess
+import copy
 
 # When is the last time an anomaly was reported (for rate limiting)
 last_anomaly_time = None
@@ -28,16 +29,14 @@ LONGITUDE = config.getfloat('LOCATION', 'longitude')
 panel_data = {}
 
 class LongTermAverageUpdater:
-    def __init__(self, smoothing_factor=0.1):
+    def __init__(self, ratios, smoothing_factor=0.001):
         self.smoothing_factor = smoothing_factor
-        self.ratios = {}
-
-    def initialize_ratios(self, initial_ratios):
-        self.ratios = initial_ratios
+        self.ratios = copy.deepcopy(ratios)
 
     def update_ratios(self, inverter_id, panel_number, new_ratio):
         if inverter_id not in self.ratios:
             self.ratios[inverter_id] = {}
+
         if panel_number not in self.ratios[inverter_id]:
             self.ratios[inverter_id][panel_number] = new_ratio
         else:
@@ -46,13 +45,13 @@ class LongTermAverageUpdater:
                               (1 - self.smoothing_factor) * current_average)
             self.ratios[inverter_id][panel_number] = updated_average
 
+
 initial_ratios = {
-    "116183124575": {1: 0.27, 2: 0.27, 3: 0.26, 4: 0.25},
-    "116184895965": {1: 0.33, 2: 0.33, 3: 0.33, 4: 0} # No 4th panel on this inverter
+    "116183124575": {1: 0.244, 2: 0.248, 3: 0.262, 4: 0.246},
+    "116184895965": {1: 0.331, 2: 0.336, 3: 0.333, 4: 0} # No 4th panel on this inverter
 }
 
-long_term_averages = LongTermAverageUpdater(smoothing_factor=0.05)
-long_term_averages.initialize_ratios(initial_ratios)
+long_term_averages = LongTermAverageUpdater(initial_ratios, smoothing_factor=0.05)
 
 current_frame_inverter_id = None
 
@@ -84,6 +83,12 @@ def check_panel_ratios(inverter_id):
     total_power = panels[0]
     if total_power == 0:
         return
+        
+    current_time = datetime.now().astimezone().isoformat()
+
+    print(f"\n{current_time} Ratios for Inverter {inverter_id}:")
+    print("Panel | Current Ratio | Expected Ratio | Delta")
+    print("-----------------------------------------")
 
     abnormal_panels = []
     for panel_number, power in panels.items():
@@ -94,10 +99,12 @@ def check_panel_ratios(inverter_id):
         actual_ratio = power / total_power
         long_term_averages.update_ratios(inverter_id, panel_number, actual_ratio)
         expected_ratio = long_term_averages.ratios[inverter_id][panel_number]
-        
-        if abs(actual_ratio - expected_ratio) > 0.1 and not is_shadow_expected(inverter_id, panel_number):
+        delta = actual_ratio - expected_ratio
+    
+        print(f"{panel_number:>5} | {actual_ratio:>13.2%} | {expected_ratio:>14.2%} | {delta:>6.1%}")
+
+        if abs(delta) > 0.1 and not is_shadow_expected(inverter_id, panel_number):
             abnormal_panels.append(f"Inverter {inverter_id}, Panel {panel_number}")
-            current_time = datetime.now().astimezone().isoformat()
             print(f"Abnormal pattern detected at {current_time}: Inverter {inverter_id}, Panel {panel_number}")
             print(f"Expected ratio: {expected_ratio:.2f}, Actual ratio: {actual_ratio:.2f}")
             print(str(json.dumps(panel_data)))
@@ -166,21 +173,29 @@ def on_message(client, userdata, msg):
 
 
 class SolarPanelHTTPHandler(BaseHTTPRequestHandler):
+
+    def convert_ratios_to_percentages(self, ratio_dict):
+        percentages = {}
+        for inverter, panels in ratio_dict.items():
+            percentages[inverter] = {panel: "%.0f%%" % (round(ratio * 100, 2)) for panel, ratio in panels.items()}
+        return percentages
+
     def do_GET(self):
         if self.path == '/':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
 
-            altitude, azimuth = get_sun_position()
+            # Convert long-term averages to percentages
+            long_term_percentages = self.convert_ratios_to_percentages(long_term_averages.ratios)
+
+            global initial_ratios
+
             response = {
                 'status': system_status,
                 'panel_data': panel_data,
-                'long_term_averages': long_term_averages.ratios,
-                'sun_position': {
-                    'altitude': altitude,
-                    'azimuth': azimuth
-                }
+                'long_term_averages': long_term_percentages,
+                'initial_ratios' : self.convert_ratios_to_percentages(initial_ratios)
             }
 
             self.wfile.write(json.dumps(response, indent=2).encode())
