@@ -10,6 +10,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 import subprocess
 import copy
+import io
+import sys
 
 # When is the last time an anomaly was reported (for rate limiting)
 last_anomaly_time = None
@@ -27,65 +29,34 @@ LATITUDE = config.getfloat('LOCATION', 'latitude')
 LONGITUDE = config.getfloat('LOCATION', 'longitude')
 
 panel_data = {}
-
-class LongTermAverageUpdater:
-    def __init__(self, ratios, smoothing_factor=0.001):
-        self.smoothing_factor = smoothing_factor
-        self.ratios = copy.deepcopy(ratios)
-
-    def update_ratios(self, inverter_id, panel_number, new_ratio):
-        if inverter_id not in self.ratios:
-            self.ratios[inverter_id] = {}
-
-        if panel_number not in self.ratios[inverter_id]:
-            self.ratios[inverter_id][panel_number] = new_ratio
-        else:
-            current_average = self.ratios[inverter_id][panel_number]
-            updated_average = (self.smoothing_factor * new_ratio +
-                              (1 - self.smoothing_factor) * current_average)
-            self.ratios[inverter_id][panel_number] = updated_average
-
-
-initial_ratios = {
-    "116183124575": {1: 0.244, 2: 0.248, 3: 0.262, 4: 0.246},
-    "116184895965": {1: 0.331, 2: 0.336, 3: 0.333, 4: 0} # No 4th panel on this inverter
-}
-
-long_term_averages = LongTermAverageUpdater(initial_ratios, smoothing_factor=0.05)
+total_yields = {}
 
 current_frame_inverter_id = None
 
 system_status = "Starting up"
 
 
-#def get_sun_position():
-#    date = datetime.now(timezone.utc)
-#    altitude = solar.get_altitude(LATITUDE, LONGITUDE, date)
-#    azimuth = solar.get_azimuth(LATITUDE, LONGITUDE, date)
-#    return altitude, azimuth
-
-def is_shadow_expected(panel_id, panel_number):
-    return False
-#    altitude, azimuth = get_sun_position()
-#    # Implement logic to determine if shadow is expected based on sun position and panel location
-#    # This is a placeholder and should be customized based on your specific setup
-#    if altitude < 10:  # Sun is low in the sky
-#        return True
-#    return False
-
 def check_panel_ratios(inverter_id):
     global system_status, last_anomaly_time
     panels = panel_data[inverter_id]
+    yields = total_yields[inverter_id]
 
     # Bail if we do not have data
-    if 0 not in panels:
+    if 0 not in panels or 0 not in yields:
         return
 
     total_power = panels[0]
-    if total_power == 0:
+    # If total inverter power is less than 40W, then ignore: this is the start
+    # or stop time, things are expected to be not ideal.
+    if total_power < 40:
         return
         
     current_time = datetime.now().astimezone().isoformat()
+
+    # Capture the table output
+    output = io.StringIO()
+    original_stdout = sys.stdout
+    sys.stdout = output
 
     print(f"\n{current_time} Ratios for Inverter {inverter_id}:")
     print("Panel | Current Ratio | Expected Ratio | Delta")
@@ -98,17 +69,22 @@ def check_panel_ratios(inverter_id):
             continue
 
         actual_ratio = power / total_power
-        long_term_averages.update_ratios(inverter_id, panel_number, actual_ratio)
-        expected_ratio = long_term_averages.ratios[inverter_id][panel_number]
+        expected_ratio = yields[panel_number] / yields[0]
         delta = actual_ratio - expected_ratio
     
-        print(f"{panel_number:>5} | {actual_ratio:>13.2%} | {expected_ratio:>14.2%} | {delta:>6.1%}")
+        print(f"{panel_number:>5} | {actual_ratio:>13.1%} | {expected_ratio:>14.1%} | {delta:>6.1%}")
 
-        if abs(delta) > 0.1 and not is_shadow_expected(inverter_id, panel_number):
+        if abs(delta) > 0.05:
             abnormal_panels.append(f"Inverter {inverter_id}, Panel {panel_number}")
             print(f"Abnormal pattern detected at {current_time}: Inverter {inverter_id}, Panel {panel_number}")
             print(f"Expected ratio: {expected_ratio:.2f}, Actual ratio: {actual_ratio:.2f}")
-            print(str(json.dumps(panel_data)))
+
+    # Restore stdout and get the captured output
+    sys.stdout = original_stdout
+    table_output = output.getvalue()
+    
+    # Print the table to console
+    print(table_output)
 
     if abnormal_panels:
         system_status = f"Abnormal patterns detected: {', '.join(abnormal_panels)}"
@@ -116,9 +92,12 @@ def check_panel_ratios(inverter_id):
         # Check the time since the last anomaly notification
         current_time = datetime.now()
         if last_anomaly_time is None or (current_time - last_anomaly_time).total_seconds() > 1800:
-            # Call the notification script
+            # Prepare the full message including the table and system status
+            full_message = f"{table_output}\n\n{system_status}\n\nPanel Data: {json.dumps(panel_data, indent=2)}"
+            
+            # Call the notification script with the full message
             process = subprocess.Popen(['bash', 'pvmonitor_notify_anomaly.sh'], stdin=subprocess.PIPE)
-            process.communicate(input=system_status.encode())
+            process.communicate(input=full_message.encode())
             last_anomaly_time = current_time
     else:
         system_status = "All panels operating normally"
@@ -127,6 +106,7 @@ def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))
     client.subscribe("solar/+/+/power")
     client.subscribe("solar/+/0/powerdc")
+    client.subscribe("solar/+/+/yieldtotal")
 
 def on_message(client, userdata, msg):
     # We receive MQTT messages one by one, but we can only work based on
@@ -157,10 +137,10 @@ def on_message(client, userdata, msg):
 
     if inverter_id not in panel_data:
         panel_data[inverter_id] = {}
+        total_yields[inverter_id] = {}
 
     if power_type == "powerdc":
         # Start of a new frame
-
         # Handle the previous frame: we can check ratios now
         global current_frame_inverter_id
         if current_frame_inverter_id:
@@ -171,14 +151,16 @@ def on_message(client, userdata, msg):
 
     elif power_type == "power" and panel_number > 0:
         panel_data[inverter_id][panel_number] = power
+    elif power_type == "yieldtotal":
+        total_yields[inverter_id][panel_number] = power
 
 
 class SolarPanelHTTPHandler(BaseHTTPRequestHandler):
 
-    def convert_ratios_to_percentages(self, ratio_dict):
+    def convert_yields_to_percentages(self, yields_dict):
         percentages = {}
-        for inverter, panels in ratio_dict.items():
-            percentages[inverter] = {panel: "%.0f%%" % (round(ratio * 100, 2)) for panel, ratio in panels.items()}
+        for inverter, panels in yields_dict.items():
+            percentages[inverter] = {panel: "%.0f%%" % (round(totalyield / panels[0] * 100, 2)) for panel, totalyield in panels.items()}
         return percentages
 
     def do_GET(self):
@@ -188,15 +170,12 @@ class SolarPanelHTTPHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             # Convert long-term averages to percentages
-            long_term_percentages = self.convert_ratios_to_percentages(long_term_averages.ratios)
-
-            global initial_ratios
+            long_term_percentages = self.convert_yields_to_percentages(total_yields)
 
             response = {
                 'status': system_status,
                 'panel_data': panel_data,
-                'long_term_averages': long_term_percentages,
-                'initial_ratios' : self.convert_ratios_to_percentages(initial_ratios)
+                'total_yields_pct': long_term_percentages,
             }
 
             self.wfile.write(json.dumps(response, indent=2).encode())
