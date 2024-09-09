@@ -131,8 +131,8 @@ static int linky_message(uint8_t *p)
 		// No special treatment for PTEC, DEMAIN, IINST, ADPS
 		memcpy(data, &p[1], 3);
 
-		// Sanity check for PAPP, GAS, and WATER
-		if (!strcmp(name, "PAPP") || !strcmp(name, "GAS") || !strcmp(name, "WATER")) {
+		// Sanity check for PAPP
+		if (!strcmp(name, "PAPP")) {
 			for (int j = 0; j < 3; j++) {
 				if (!isdigit(p[j+1])) {
 					printf("Error: Non-digit character in %s value. Received value: %02X %02X %02X\n", 
