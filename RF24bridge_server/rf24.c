@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
+#include <ctype.h>
 #include "mqtt_login.h"
 
 #define PIPE_LINKY_ID 3
@@ -11,6 +12,8 @@
 
 unsigned int gas_pulse_counter = 0;
 unsigned int water_pulse_counter = 0;
+
+static uint32_t prev_bbrh_values[6] = {0}; // Store previous values for sanity-checking
 
 static void mqtt_report(const char *prefix, const char *topic, const char *fmt, ...)
 {
@@ -127,6 +130,18 @@ static int linky_message(uint8_t *p)
 
 		// No special treatment for PTEC, DEMAIN, IINST, ADPS
 		memcpy(data, &p[1], 3);
+
+		// Sanity check for PAPP, GAS, and WATER
+		if (!strcmp(name, "PAPP") || !strcmp(name, "GAS") || !strcmp(name, "WATER")) {
+			for (int j = 0; j < 3; j++) {
+				if (!isdigit(p[j+1])) {
+					printf("Error: Non-digit character in %s value. Received value: %02X %02X %02X\n", 
+						   name, p[1], p[2], p[3]);
+					return 1;
+				}
+			}
+		}
+
 		if (!strcmp(name, "PAPP")) {
 			// Only 3 characters, add a zero at the end to reconstitute VA
 			data[3] = '0';
@@ -136,6 +151,19 @@ static int linky_message(uint8_t *p)
 			uint32_t val = p[1] << 16 | p[2] << 8 | p[3];
 			val <<= 6;
 			sprintf(data, "%d", val);
+
+			// Check difference with previous value
+			int bbrh_index = strchr("bBwWrR", p[0]) - "bBwWrR";
+			if (prev_bbrh_values[bbrh_index] != 0) {
+				int32_t diff = abs((int32_t)val - (int32_t)prev_bbrh_values[bbrh_index]);
+				if (diff > 4096) {
+					printf("Error: %s value differs from previous by more than 4096.\n"
+						   "Received value: %d, Previous value: %d. Seems bogus, ignoring.\n", 
+						   name, val, prev_bbrh_values[bbrh_index]);
+					return 1;
+				}
+			}
+			prev_bbrh_values[bbrh_index] = val;
 		}
 
 		if (!strcmp(name, "ADPS")) {
