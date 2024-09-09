@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 import pytz
-from pysolar import solar
+#from pysolar import solar
 from configparser import ConfigParser
 import paho.mqtt.client as mqtt
 import json
@@ -58,19 +58,20 @@ current_frame_inverter_id = None
 system_status = "Starting up"
 
 
-def get_sun_position():
-    date = datetime.now(timezone.utc)
-    altitude = solar.get_altitude(LATITUDE, LONGITUDE, date)
-    azimuth = solar.get_azimuth(LATITUDE, LONGITUDE, date)
-    return altitude, azimuth
+#def get_sun_position():
+#    date = datetime.now(timezone.utc)
+#    altitude = solar.get_altitude(LATITUDE, LONGITUDE, date)
+#    azimuth = solar.get_azimuth(LATITUDE, LONGITUDE, date)
+#    return altitude, azimuth
 
 def is_shadow_expected(panel_id, panel_number):
-    altitude, azimuth = get_sun_position()
-    # Implement logic to determine if shadow is expected based on sun position and panel location
-    # This is a placeholder and should be customized based on your specific setup
-    if altitude < 10:  # Sun is low in the sky
-        return True
     return False
+#    altitude, azimuth = get_sun_position()
+#    # Implement logic to determine if shadow is expected based on sun position and panel location
+#    # This is a placeholder and should be customized based on your specific setup
+#    if altitude < 10:  # Sun is low in the sky
+#        return True
+#    return False
 
 def check_panel_ratios(inverter_id):
     global system_status, last_anomaly_time
