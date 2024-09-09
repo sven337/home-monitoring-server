@@ -112,14 +112,11 @@ static int linky_message(uint8_t *p)
 			{ "DEMAIN",  'D'}, //---- "
 			{ "IINST",   'I'}, //003 Z
 			{ "ADPS",    'A'},
-			{ "GAS", 'G' },
-			{ "WATER", 'E' },
+			{ "GAS",     'G'},
+			{ "WATER",   'E'},
 	};
 
 	for (unsigned int i = 0; i < sizeof(mapping)/sizeof(mapping[0]); i++) {
-		if (!mapping[i].frame_type) {
-			continue;
-		}
 		if (mapping[i].frame_type != p[0]) {
 			continue;
 		}
@@ -128,7 +125,7 @@ static int linky_message(uint8_t *p)
 		const char *name = mapping[i].name;
 		char data[16] = { 0 };
 
-		// no special treatment for PTEC, DEMAIN, IINST, ADPS
+		// No special treatment for PTEC, DEMAIN, IINST, ADPS
 		memcpy(data, &p[1], 3);
 		if (!strcmp(name, "PAPP")) {
 			// Only 3 characters, add a zero at the end to reconstitute VA
