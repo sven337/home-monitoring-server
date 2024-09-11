@@ -36,6 +36,7 @@ current_frame_inverter_id = None
 system_status = "Starting up"
 
 
+abnormal_panel_start_times = {}
 def check_panel_ratios(inverter_id):
     global system_status, last_anomaly_time
     panels = panel_data[inverter_id]
@@ -62,7 +63,6 @@ def check_panel_ratios(inverter_id):
     print("Panel | Current Ratio | Expected Ratio | Delta")
     print("-----------------------------------------")
 
-    abnormal_panels = []
     for panel_number, power in panels.items():
         # Skip total entry
         if panel_number == 0:
@@ -72,12 +72,21 @@ def check_panel_ratios(inverter_id):
         expected_ratio = yields[panel_number] / yields[0]
         delta = actual_ratio - expected_ratio
     
-        print(f"{panel_number:>5} | {actual_ratio:>13.1%} | {expected_ratio:>14.1%} | {delta:>6.1%}")
-
+        
+        panel_key = f"{inverter_id} panel {panel_number}"
+        panel_abnormal = False
         if abs(delta) > 0.05:
-            abnormal_panels.append(f"Inverter {inverter_id}, Panel {panel_number}")
+            if panel_key not in abnormal_panel_start_times:
+                abnormal_panel_start_times[panel_key] = current_time
+
+            panel_abnormal = True
             print(f"Abnormal pattern detected at {current_time}: Inverter {inverter_id}, Panel {panel_number}")
             print(f"Expected ratio: {expected_ratio:.2f}, Actual ratio: {actual_ratio:.2f}")
+        else:
+            if panel_key in abnormal_panel_start_times:
+                del abnormal_panel_start_times[panel_key]
+
+        print(f"{panel_number:>5} | {actual_ratio:>13.1%} | {expected_ratio:>14.1%} | {delta:>6.1%}{'<<<<<---' if panel_abnormal else ''}")
 
     # Restore stdout and get the captured output
     sys.stdout = original_stdout
@@ -86,9 +95,18 @@ def check_panel_ratios(inverter_id):
     # Print the table to console
     print(table_output)
 
-    if abnormal_panels:
-        system_status = f"Abnormal patterns detected: {', '.join(abnormal_panels)}"
+    send_notification = False
+    if len(abnormal_panel_start_times) > 0:
+        system_status = "Abnormal panels"
 
+    for panel_key, abnormal_since in abnormal_panel_start_times.items():
+        anomaly_duration = current_time - abnormal_since
+        system_status += f"{panel_key} for {anomaly_duration.total_seconds() / 60:.0f} minutes\n"
+        if anomaly_duration >= timedelta(minutes=10):
+            # This panel has been wrong for more than 10 minutes, notify
+            send_notification = True
+
+    if send_notification:
         # Check the time since the last anomaly notification
         current_time = datetime.now()
         if last_anomaly_time is None or (current_time - last_anomaly_time).total_seconds() > 1800:
