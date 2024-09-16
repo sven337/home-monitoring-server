@@ -40,6 +40,7 @@ system_status = "Starting up"
 
 
 abnormal_panel_start_times = {}
+last_check_on_day = None
 
 pivot_tables = None
 std_dev_tables = None
@@ -98,7 +99,7 @@ def get_sun_position():
     
 
 def check_panel_ratios(inverter_id):
-    global system_status, last_anomaly_time
+    global system_status, last_anomaly_time, last_check_on_day
     panels = panel_data[inverter_id]
     yields = total_yields[inverter_id]
 
@@ -107,12 +108,19 @@ def check_panel_ratios(inverter_id):
         return
 
     total_power = panels[0]
-    # If total inverter power is less than 40W, then ignore: this is the start
+    # If total inverter power is less than 50W, then ignore: this is the start
     # or stop time, things are expected to be not ideal.
-    if total_power < 40:
+    if total_power < 50:
         return
         
     current_time = datetime.now().astimezone()
+    current_day = current_time.date()
+
+    if last_check_on_day is None or current_day > last_check_on_day:
+        print("New day: resetting last_check_on_day")
+        abnormal_panel_start_times.clear()
+        last_check_on_day = current_day
+
 
     # Capture the table output
     output = io.StringIO()
@@ -176,8 +184,7 @@ def check_panel_ratios(inverter_id):
     for panel_key, abnormal_since in abnormal_panel_start_times.items():
         anomaly_duration = current_time - abnormal_since
         system_status += f"{panel_key} for {anomaly_duration.total_seconds() / 60:.0f} minutes\n"
-#        if anomaly_duration >= timedelta(minutes=10):
-        if anomaly_duration >= timedelta(minutes=1):
+        if anomaly_duration >= timedelta(minutes=10):
             # This panel has been wrong for more than 10 minutes, notify
             send_notification = True
 
