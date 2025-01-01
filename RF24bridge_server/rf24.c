@@ -39,6 +39,7 @@ static int therm_message(uint8_t *p)
 	int temperature_error = 0;
 	float volt, level;
 	const char *location = "";
+    uint8_t dual_cell = 0;
 
 	switch (p[1]) {
 		case 'E':
@@ -52,6 +53,7 @@ static int therm_message(uint8_t *p)
 			break;
 		case 'P':
 			location = "pool";
+            dual_cell = 1;
 			break;
 		case 'B':
 			location = "bed";
@@ -69,8 +71,10 @@ static int therm_message(uint8_t *p)
 			volt = value*3.3f/1024;
 			/* Single cell */
 			level = (volt-0.8)/(1.5-0.8); //boost cutoff at 0.8
-			/* 2S: warn at 0.9V/cell = 1.8V to limit deep discharge */
-			level = (volt-1.8)/(2.75-1.8);
+            if (dual_cell) {
+                /* 2S: warn at 0.9V/cell = 1.8V to limit deep discharge */
+                level = (volt-1.8)/(2.75-1.8);
+            }
 
 			printf("Thermometer %s battery level: %.2fV = %f%%\n", location, volt, 100*level);
 			sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/battery' -u %s -P %s  -i rf24_updater -m '%d'", location, MQTT_USER, MQTT_PASS, (int)(100*level));
