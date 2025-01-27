@@ -7,6 +7,9 @@ import time
 import datetime
 import mqtt_creds
 
+import functools
+print = functools.partial(print, flush=True)
+
 # MQTT var tracking when it was last seen and default value. Takes a timeout in seconds
 class mqtt_var:
 
@@ -25,8 +28,9 @@ class mqtt_var:
 
     def set(self, value):
         self.__last_seen = time.time()
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if value != self.__value:
-            print("Got " + self.__name + " " + str(value))
+            print(f"{timestamp} Got " + self.__name + " " + str(value))
         self.__value = value
 
 
@@ -202,11 +206,12 @@ class PoolTimeTracker:
         month = datetime.datetime.now().month
         # Between november and april, if water is below 10°, force 2h of filtration AT NIGHT
         # in order to prevent icing
-        if month >= 11 and month <= 4 and pool_temperature.get < 10:
+        if (month >= 11 or month <= 4) and pool_temperature.get() < 10:
             if self.night_start_at == 0:
                 # start at 3AM
                 self.night_start_at = datetime.datetime.combine(datetime.date.today(), datetime.time(3, 0)).timestamp()
             return True
+        return False
 
           
 
@@ -387,9 +392,10 @@ class InjectionTracker:
     def notify_net_house_power(self, pwr):
         # Receive notification of net power
 
-        # Ignore redundant notifications every 15 sec
+        # Ignore redundant notifications, min 15 sec
         if time.time() - self.last_net_power_at < 15:
             return
+
         last_net_power_at = self.last_net_power_at
         self.last_net_power_at = time.time()
 
@@ -495,7 +501,9 @@ def status():
 def log(msg):
     global last_msg 
     last_msg = msg
-    print(msg)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    formatted_msg = f"{timestamp} {msg}"
+    print(formatted_msg)
     if hasattr(mqtt, "publish"):
         mqtt.publish('pool_control/log', msg)
 
