@@ -458,9 +458,12 @@ class InjectionTracker:
                     self.consuming_pump_stop_decision(self.net_power_ema)
                 
 def cb_netpower(client, userdata, msg):
-    p = float(msg.payload)
-    house_net_power.set(p)
-    injection_tracker.notify_net_house_power(p)
+    try:
+        p = float(msg.payload)
+        house_net_power.set(p)
+        injection_tracker.notify_net_house_power(p)
+    except ValueError:
+        print(f"netpower Received non-integer payload: {msg.payload}. Ignoring.")
         
 def cb_pooltemp(client, userdata, msg):
     pool_temperature.set(float(msg.payload))
