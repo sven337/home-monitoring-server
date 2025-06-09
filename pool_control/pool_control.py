@@ -131,15 +131,9 @@ class PoolTimeTracker:
         t = pool_temperature.get() 
         if t < 15: # includes case -1 = invalid value
             self.target_filtration_hours = 2
-        elif t < 20:
-            # 4h + 0.5h/degree above 15, so 16 is 4.5h and 20 is 6.5h
-            self.target_filtration_hours = 4 + (t - 15) / 2
-        elif t < 25:
-            # 7h + 1h/degree above 20, so 21 is 8h and 25 is 12h
-            self.target_filtration_hours = 7 + (t - 20)
-        elif t >= 25:
-            # Super hot? temperature/2
-            self.target_filtration_hours = t / 2
+        else:
+            # 18°C -> 2h, 28°C -> 12h
+            self.target_filtration_hours = t - 16
 
 
         # Modulate according to exterior temp
