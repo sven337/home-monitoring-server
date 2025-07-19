@@ -129,7 +129,7 @@ class PoolTimeTracker:
 
         # Calculate filtration time based on pool temperature...
         t = pool_temperature.get() 
-        if t < 15: # includes case -1 = invalid value
+        if t < 18: # includes case -1 = invalid value
             self.target_filtration_hours = 2
         else:
             # 18°C -> 2h, 28°C -> 12h
