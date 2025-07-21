@@ -85,7 +85,7 @@ static int therm_message(uint8_t *p)
 			if (temperature == (int16_t)0xFFFF) {
 				temperature_error = 1;
 			}
-			printf("Thermometer %s temperature: %.1f°C\n", location, temperature/16.0f);
+			printf("Thermometer %s temperature: %.1fÂ°C\n", location, temperature/16.0f);
 			if (!temperature_error) {
 				sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/temperature' -u %s -P %s -i rf24_updater -m '%.1f'", location, MQTT_USER, MQTT_PASS, temperature/16.0f);
 				system(buf);
@@ -160,7 +160,12 @@ static int linky_message(uint8_t *p)
 			sprintf(data, "%d", val);
 
 			// Check difference with previous value
-			int bbrh_index = strchr("bBwWrR", p[0]) - "bBwWrR";
+			char *brrh_frame_type = strchr("bBwWrR", p[0]);
+			if (brrh_frame_type == NULL) {
+				printf("Error: Invalid BBRH frame type '%c' (0x%02X)\n", p[0], p[0]);
+				return 1;
+			}
+			int bbrh_index = brrh_frame_type - "bBwWrR";
 			if (prev_bbrh_values[bbrh_index] != 0) {
 				int32_t diff = abs((int32_t)val - (int32_t)prev_bbrh_values[bbrh_index]);
 				if (diff > 4096) {
