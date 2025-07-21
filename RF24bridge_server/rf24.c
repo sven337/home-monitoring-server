@@ -5,17 +5,104 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <mosquitto.h>
 #include "mqtt_login.h"
 
 #define PIPE_LINKY_ID 3
 #define PIPE_THERMOMETER_ID 4
+#define MQTT_HOST "192.168.1.6"
+#define MQTT_PORT 1883
+#define MQTT_KEEPALIVE 60
+
+// Global MQTT client
+static struct mosquitto *mosq = NULL;
+static bool mqtt_connected = false;
 
 unsigned int gas_pulse_counter = 0;
 unsigned int water_pulse_counter = 0;
 
 static uint32_t prev_bbrh_values[6] = {0}; // Store previous values for sanity-checking
 
-static void mqtt_report(const char *prefix, const char *topic, const char *fmt, ...)
+static void on_mqtt_connect(struct mosquitto *mosq, void *userdata, int result)
+{
+	if (result == 0) {
+		mqtt_connected = true;
+		printf("MQTT: Connected to broker\n");
+	} else {
+		mqtt_connected = false;
+		printf("MQTT: Connection failed with code %d\n", result);
+	}
+}
+
+// MQTT disconnection callback
+static void on_mqtt_disconnect(struct mosquitto *mosq, void *userdata, int result)
+{
+	mqtt_connected = false;
+	printf("MQTT: Disconnected from broker\n");
+}
+
+// Initialize MQTT client
+static int mqtt_init(void)
+{
+	int rc;
+	
+	// Initialize library
+	mosquitto_lib_init();
+	
+	// Create client instance
+	mosq = mosquitto_new("rf24_updater", true, NULL);
+	if (!mosq) {
+		printf("MQTT: Failed to create mosquitto instance\n");
+		return -1;
+	}
+
+	mosquitto_int_option(mosq, MOSQ_OPT_PROTOCOL_VERSION, MQTT_PROTOCOL_V5);
+
+	// Set callbacks
+	mosquitto_connect_callback_set(mosq, on_mqtt_connect);
+	mosquitto_disconnect_callback_set(mosq, on_mqtt_disconnect);
+	
+	// Set username and password
+	rc = mosquitto_username_pw_set(mosq, MQTT_USER, MQTT_PASS);
+	if (rc != MOSQ_ERR_SUCCESS) goto err;
+	
+	// Connect to broker
+	rc = mosquitto_connect(mosq, MQTT_HOST, MQTT_PORT, MQTT_KEEPALIVE);
+	if (rc != MOSQ_ERR_SUCCESS) goto err;
+	
+	// Start the network loop
+	rc = mosquitto_loop_start(mosq);
+	if (rc != MOSQ_ERR_SUCCESS) goto err;
+	
+	// Wait a bit for connection to establish
+	usleep(100000); // 100ms
+	
+	return 0;
+err:
+	printf("MQTT: Failed to initialize: %s\n", mosquitto_strerror(rc));
+	mosquitto_destroy(mosq);
+	mosquitto_lib_cleanup();
+	return -1;
+}
+
+static void mqtt_publish(const char *topic, const char *message)
+{
+	int retry = 1;
+	do {
+		int rc = mosquitto_publish(mosq, NULL, topic, strlen(message), message, 0, false);
+		if (rc == MOSQ_ERR_SUCCESS) {
+			break;
+		}
+		if (rc == MOSQ_ERR_NO_CONN) {
+			printf("MQTT: Not connected, attempting to reconnect before publishing to %s\n", topic);
+			mosquitto_reconnect(mosq);
+			usleep(100000); // 100ms
+		}
+	} while (retry--);
+}
+
+static void mqtt_publish_fmt(const char *topic, const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
@@ -23,9 +110,8 @@ static void mqtt_report(const char *prefix, const char *topic, const char *fmt, 
 	char message[256];
 	vsnprintf(message, 255, fmt, ap);
 
-	char command[2048];
-	sprintf(command,  "mosquitto_pub -h 192.168.1.6 -t '%s/%s' -u %s -P %s  -i rf24_updater -m '%s'", prefix, topic, MQTT_USER, MQTT_PASS, message);
-	system(command);
+	mqtt_publish(topic, message);
+	
 	va_end(ap);
 }
 
@@ -33,7 +119,6 @@ static int therm_message(uint8_t *p)
 {
 #undef UNK
 #define UNK  printf("Unknown thermometer message %c %c %c %c\n", p[0], p[1], p[2], p[3]); return 1;
-	char buf[1000];
 	uint16_t value;
 	int16_t temperature;
 	int temperature_error = 0;
@@ -77,24 +162,26 @@ static int therm_message(uint8_t *p)
             }
 
 			printf("Thermometer %s battery level: %.2fV = %f%%\n", location, volt, 100*level);
-			sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/battery' -u %s -P %s  -i rf24_updater -m '%d'", location, MQTT_USER, MQTT_PASS, (int)(100*level));
-			system(buf);
+			
+			char topic[256];
+			snprintf(topic, 255, "%s_thermometer/battery", location);
+			mqtt_publish_fmt(topic, "%d", (int)(100*level));
 			break;
 		case 'T':
 			temperature = p[2] << 8 | p[3];
 			if (temperature == (int16_t)0xFFFF) {
 				temperature_error = 1;
 			}
-			printf("Thermometer %s temperature: %.1f°C\n", location, temperature/16.0f);
+			printf("Thermometer %s temperature: %.1f�C\n", location, temperature/16.0f);
 			if (!temperature_error) {
-				sprintf(buf, "mosquitto_pub -h 192.168.1.6 -t '%s_thermometer/temperature' -u %s -P %s -i rf24_updater -m '%.1f'", location, MQTT_USER, MQTT_PASS, temperature/16.0f);
-				system(buf);
+				char topic[256];
+				snprintf(topic, 255, "%s_thermometer/temperature", location);
+				mqtt_publish_fmt(topic, "%.1f", temperature/16.0f);
 			}
 			break;
 		case 'F':
 			printf("Thermometer %s reports no ACK received when sending temperature\n", location);
-			sprintf(buf, "date");
-			system(buf);
+			system("date");
 			break;
 		default:
 			UNK;
@@ -208,7 +295,10 @@ static int linky_message(uint8_t *p)
 		}
 
 		printf("linky: %s = %s\n", name, data);
-		mqtt_report("edf", name, "%s", data); 
+		
+		char topic[256];
+		snprintf(topic, 255, "edf/%s", name);
+		mqtt_publish_fmt(topic, "%s", data); 
 		
 		return 0;
 	}
@@ -219,6 +309,12 @@ static int linky_message(uint8_t *p)
 
 int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4]) 
 {
+	if (!mosq) {
+		if (mqtt_init()) {
+			return 1;
+		}
+	}
+
 	int error = 0;
 	switch (pipe_id) {
 		case PIPE_THERMOMETER_ID:
