@@ -104,6 +104,8 @@ static int therm_message(uint8_t *p)
 
 static int linky_message(uint8_t *p)
 {
+	static int last_PAPP;
+
 	struct {
 		const char *name;
 		uint8_t frame_type;
@@ -149,6 +151,7 @@ static int linky_message(uint8_t *p)
 		if (!strcmp(name, "PAPP")) {
 			// Only 3 characters, add a zero at the end to reconstitute VA
 			data[3] = '0';
+			last_PAPP = atoi(data);
 		}
 
 		if (!strncmp(name, "BBRH", 4)) {
@@ -180,7 +183,8 @@ static int linky_message(uint8_t *p)
 			strftime(hour_of_day_str, 10, "%H", tm);
 			hour_of_day = atoi(hour_of_day_str);
 
-			if (hour_of_day >= 8 && hour_of_day < 22) {
+			// Threshold min 7300VA to warn: on a 6kVA subscription the Linky will allow 1.3x = 7800VA indefinitely
+			if (last_PAPP > 7300 && hour_of_day >= 8 && hour_of_day < 22) {
 				system("cd ../power_warning; ./warn_power.sh ''");
 			}
 
