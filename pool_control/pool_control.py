@@ -42,9 +42,21 @@ house_net_power = mqtt_var("net power", -1)
 # solar production
 solar_power = mqtt_var("solar prod", -1, timeout=60)
 pool_temperature = mqtt_var("pool temperature", -1, timeout=3600)
+pool_filter_water_temperature = mqtt_var("pool filter water temperature", -1, timeout=3600)
 exterior_temperature = mqtt_var("exterior temperature", 10, timeout=3600)
 
 last_msg = ""
+
+def get_pool_temperature():
+    """Get the best available pool temperature, using backup sensor if primary is invalid"""
+    temperature = pool_temperature.get()
+    if temperature == -1:
+        temperature = pool_filter_water_temperature.get()
+    
+    if temperature > 50:
+        # Invalid value, DS18B20 can return 85°C
+        temperature = -1
+    return temperature
 
 def cb_ADPS(client, userdata, msg):
     # ADPS: stop pumping for 30 minutes
@@ -128,7 +140,7 @@ class PoolTimeTracker:
         old_target = self.target_filtration_hours
 
         # Calculate filtration time based on pool temperature...
-        t = pool_temperature.get() 
+        t = get_pool_temperature() 
         if t < 18: # includes case -1 = invalid value
             self.target_filtration_hours = 2
         else:
@@ -200,7 +212,7 @@ class PoolTimeTracker:
         month = datetime.datetime.now().month
         # Between november and april, if water is below 10°, force 2h of filtration AT NIGHT
         # in order to prevent icing
-        if (month >= 11 or month <= 4) and pool_temperature.get() < 10:
+        if (month >= 11 or month <= 4) and get_pool_temperature() < 10:
             if self.night_start_at == 0:
                 # start at 3AM
                 self.night_start_at = datetime.datetime.combine(datetime.date.today(), datetime.time(3, 0)).timestamp()
@@ -463,6 +475,10 @@ def cb_pooltemp(client, userdata, msg):
     pool_temperature.set(float(msg.payload))
     pool_time_tracker.update_target_filtration_hours()
 
+def cb_pool_filter_water_temp(client, userdata, msg):
+    pool_filter_water_temperature.set(float(msg.payload))
+    pool_time_tracker.update_target_filtration_hours()
+
 def cb_exteriortemp(client, userdata, msg):
     exterior_temperature.set(float(msg.payload))
     pool_time_tracker.update_target_filtration_hours()
@@ -481,7 +497,7 @@ def cb_filter_more_today(client, userdata, msg):
     timeadd = float(msg)
     pool_time_tracker.filter_more_today = timeadd
     pool_time_tracker.update_target_filtration_hours() 
-    log("manual override of filter time %d"  % timeadd)
+    log("manual override of filter time %.1f"  % timeadd)
     mqtt_publish_status()
 
 def cb_disable_duration(client, userdata, msg):
@@ -539,6 +555,7 @@ subscriptions = {
     'solar/ac/power' : cb_PVprod,
     'zigbee2mqtt/main_panel_powermonitor/power_ab' : cb_netpower,
     'pool_thermometer/temperature' : cb_pooltemp,
+    'openbopi/watertemp' : cb_pool_filter_water_temp,
     'exterior_thermometer/temperature' : cb_exteriortemp,
     'zigbee2mqtt/smartrelay_piscine/state' : cb_relaystate,
     'pool_control/send_status' : lambda x,y,z: mqtt_publish_status(),
