@@ -9,6 +9,7 @@
 #include <mosquitto.h>
 #include "mqtt_login.h"
 
+#define PIPE_POOL_COVER 1
 #define PIPE_LINKY_ID 3
 #define PIPE_THERMOMETER_ID 4
 #define MQTT_HOST "192.168.1.6"
@@ -19,16 +20,89 @@
 static struct mosquitto *mosq = NULL;
 static bool mqtt_connected = false;
 
+extern void rf24_send_message(uint8_t pipe_id, uint8_t data[4]);
+
 unsigned int gas_pulse_counter = 0;
 unsigned int water_pulse_counter = 0;
 
 static uint32_t prev_bbrh_values[6] = {0}; // Store previous values for sanity-checking
+
+// MQTT message callback for subscribed topics
+static void on_mqtt_message(struct mosquitto *mosq, void *userdata, const struct mosquitto_message *message)
+{
+	if (!message->payload) {
+		fprintf(stderr, "MQTT: No payload for topic %s\n", message->topic);
+		return;
+	}
+
+	fprintf(stderr, "Got MQTT message on topic %s: %s\n", message->topic, (char*)message->payload);
+	uint8_t pipe_id;
+	uint8_t data[4] = {0, 0, 0, 0};
+	
+	// Handle pool_cover/command and pool_cover/duration topics
+	if (!strcmp(message->topic, "pool_cover/command")) {
+		pipe_id = PIPE_POOL_COVER;
+		char *payload = (char*)message->payload;
+
+		data[0] = 'C'; // 'C' for command
+
+		if (!strcmp(payload, "up")) {
+			data[1] = 'U';
+		} else if (!strcmp(payload, "down")) {
+			data[1] = 'D';
+		} else if (!strcmp(payload, "stop")) {
+			data[1] = 'S';
+		} else {
+			fprintf(stderr, "pool_cover/command: Invalid payload: '%s'\n", payload);
+			return;
+		}
+
+		rf24_send_message(pipe_id, data);
+	} else if (!strcmp(message->topic, "pool_cover/duration")) {
+		pipe_id = PIPE_POOL_COVER;
+		char *payload = (char*)message->payload;
+
+		data[0] = 'D'; // 'D' for duration
+
+		char *endptr = NULL;
+		long val = strtol(payload, &endptr, 10);
+		if (endptr == payload || val < 0 || val > 0xFFFFFF) {
+			fprintf(stderr, "pool_cover/duration: Invalid payload: '%s'\n", payload);
+			return;
+		}
+		data[1] = (uint8_t)(val & 0xFF);
+		data[2] = (uint8_t)((val >> 8) & 0xFF);
+		data[3] = (uint8_t)((val >> 16) & 0xFF);
+
+	} else { 
+		fprintf(stderr, "MQTT: Unknown topic %s\n", message->topic);
+		return;
+	}
+
+	rf24_send_message(pipe_id, data);
+}
 
 static void on_mqtt_connect(struct mosquitto *mosq, void *userdata, int result)
 {
 	if (result == 0) {
 		mqtt_connected = true;
 		printf("MQTT: Connected to broker\n");
+		
+		// Subscribe to pool cover topics
+		int rc;
+		rc = mosquitto_subscribe(mosq, NULL, "pool_cover/command", 0);
+		if (rc != MOSQ_ERR_SUCCESS) {
+			printf("MQTT: Failed to subscribe to pool_cover/command: %s\n", mosquitto_strerror(rc));
+		} else {
+			printf("MQTT: Subscribed to pool_cover/command\n");
+		}
+		
+		rc = mosquitto_subscribe(mosq, NULL, "pool_cover/duration", 0);
+		if (rc != MOSQ_ERR_SUCCESS) {
+			printf("MQTT: Failed to subscribe to pool_cover/duration: %s\n", mosquitto_strerror(rc));
+		} else {
+			printf("MQTT: Subscribed to pool_cover/duration\n");
+		}
 	} else {
 		mqtt_connected = false;
 		printf("MQTT: Connection failed with code %d\n", result);
@@ -50,8 +124,12 @@ static int mqtt_init(void)
 	// Initialize library
 	mosquitto_lib_init();
 	
+	// Create unique client ID by appending process ID
+	char client_id[64];
+	snprintf(client_id, sizeof(client_id), "rf24_updater_%d", getpid());
+	
 	// Create client instance
-	mosq = mosquitto_new("rf24_updater", true, NULL);
+	mosq = mosquitto_new(client_id, true, NULL);
 	if (!mosq) {
 		printf("MQTT: Failed to create mosquitto instance\n");
 		return -1;
@@ -62,6 +140,7 @@ static int mqtt_init(void)
 	// Set callbacks
 	mosquitto_connect_callback_set(mosq, on_mqtt_connect);
 	mosquitto_disconnect_callback_set(mosq, on_mqtt_disconnect);
+	mosquitto_message_callback_set(mosq, on_mqtt_message);
 	
 	// Set username and password
 	rc = mosquitto_username_pw_set(mosq, MQTT_USER, MQTT_PASS);
@@ -118,13 +197,17 @@ static void mqtt_publish_fmt(const char *topic, const char *fmt, ...)
 static int therm_message(uint8_t *p)
 {
 #undef UNK
-#define UNK  printf("Unknown thermometer message %c %c %c %c\n", p[0], p[1], p[2], p[3]); return 1;
+#define UNK  printf("%s: Unknown thermometer message %c %c %c %c\n", datebuf, p[0], p[1], p[2], p[3]); return 1;
 	uint16_t value;
 	int16_t temperature;
 	int temperature_error = 0;
 	float volt, level;
 	const char *location = "";
     uint8_t dual_cell = 0;
+
+	time_t now = time(NULL);
+	char datebuf[64];
+	strftime(datebuf, sizeof(datebuf), "%c", localtime(&now));
 
 	switch (p[1]) {
 		case 'E':
@@ -161,7 +244,7 @@ static int therm_message(uint8_t *p)
                 level = (volt-1.8)/(2.75-1.8);
             }
 
-			printf("Thermometer %s battery level: %.2fV = %f%%\n", location, volt, 100*level);
+			printf("%s: Thermometer %s battery level: %.2fV = %f%%\n", datebuf, location, volt, 100*level);
 			
 			char topic[256];
 			snprintf(topic, 255, "%s_thermometer/battery", location);
@@ -172,7 +255,7 @@ static int therm_message(uint8_t *p)
 			if (temperature == (int16_t)0xFFFF) {
 				temperature_error = 1;
 			}
-			printf("Thermometer %s temperature: %.1f�C\n", location, temperature/16.0f);
+			printf("%s: Thermometer %s temperature: %.1f�C\n", datebuf, location, temperature/16.0f);
 			if (!temperature_error) {
 				char topic[256];
 				snprintf(topic, 255, "%s_thermometer/temperature", location);
@@ -180,8 +263,7 @@ static int therm_message(uint8_t *p)
 			}
 			break;
 		case 'F':
-			printf("Thermometer %s reports no ACK received when sending temperature\n", location);
-			system("date");
+			printf("%s: Thermometer %s reports no ACK received when sending temperature\n", datebuf, location);
 			break;
 		default:
 			UNK;
@@ -302,6 +384,8 @@ static int linky_message(uint8_t *p)
 		
 		return 0;
 	}
+
+	fprintf(stderr, "linky: unknown message %c %c %c %c\n", p[0], p[1], p[2], p[3]);
 
 	return 1;
 }

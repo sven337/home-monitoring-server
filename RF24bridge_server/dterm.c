@@ -91,7 +91,7 @@ extern void handle_serial_input_line(const char *cmd);
  */
 static struct termios intio, savetio;
 
-static int fd = -1;		/* Channel to port			*/
+int fd = -1;		/* Channel to port			*/
 static int cmdchar = 035;	/* Command character, default ^]	*/
 static char *device = 0;	/* Device, no default			*/
 static int ispeed = B9600;	/* Input speed, default 9600 bps	*/
