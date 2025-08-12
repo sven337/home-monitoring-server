@@ -12,7 +12,7 @@ extern int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4]);
 void rf24_send_message(uint8_t pipe_id, uint8_t data[4])
 {
 	fprintf(stderr, "Sending RF24 message to pipe %d: %x %x %x %x\n", pipe_id, data[0], data[1], data[2], data[3]);
-	dprintf(fd, "p%hhu %hhx %hhx %hhx %hhx\n", pipe_id, data[0], data[1], data[2], data[3]);
+	dprintf(fd, "SF24 p%hhu %hhx %hhx %hhx %hhx\n", pipe_id, data[0], data[1], data[2], data[3]);
 }
 
 static void rf24_line(const char *cmd)

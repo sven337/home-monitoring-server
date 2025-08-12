@@ -182,7 +182,12 @@ def check_panel_ratios(inverter_id):
         system_status = "Abnormal panels"
 
     for panel_key, abnormal_since in abnormal_panel_start_times.items():
+        if not inverter_id in panel_key:
+            continue
+
         anomaly_duration = current_time - abnormal_since
+        if system_status[-1] != '\n':
+            system_status += '\n'
         system_status += f"{panel_key} for {anomaly_duration.total_seconds() / 60:.0f} minutes\n"
         if anomaly_duration >= timedelta(minutes=10):
             # This panel has been wrong for more than 10 minutes, notify

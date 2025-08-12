@@ -27,6 +27,20 @@ unsigned int water_pulse_counter = 0;
 
 static uint32_t prev_bbrh_values[6] = {0}; // Store previous values for sanity-checking
 
+// Shared temperature processing function
+// Returns 0 on success, 1 on error (0xFFFF)
+// Sets temp_c to temperature in °C if successful
+static int process_temperature_16ths(uint8_t high_byte, uint8_t low_byte, float *temp_c)
+{
+	int16_t temp = high_byte << 8 | low_byte;
+	if (temp == (int16_t)0xFFFF) {
+		*temp_c = 65535;
+		return 1; // Temperature error
+	}
+	*temp_c = temp / 16.0f;
+	return 0;
+}
+
 // MQTT message callback for subscribed topics
 static void on_mqtt_message(struct mosquitto *mosq, void *userdata, const struct mosquitto_message *message)
 {
@@ -52,11 +66,18 @@ static void on_mqtt_message(struct mosquitto *mosq, void *userdata, const struct
 			data[1] = 'D';
 		} else if (!strcmp(payload, "stop")) {
 			data[1] = 'S';
+		} else if (!strcmp(payload, "mark_travel_top")) {
+			data[1] = 'M';
+			data[2] = 'T';
+		} else if (!strcmp(payload, "mark_travel_bottom")) {
+			data[1] = 'M';
+			data[2] = 'D';
+		} else if (!strcmp(payload, "query_status")) {
+			data[1] = 'Q';
 		} else {
 			fprintf(stderr, "pool_cover/command: Invalid payload: '%s'\n", payload);
 			return;
 		}
-
 		rf24_send_message(pipe_id, data);
 	} else if (!strcmp(message->topic, "pool_cover/duration")) {
 		pipe_id = PIPE_POOL_COVER;
@@ -199,7 +220,7 @@ static int therm_message(uint8_t *p)
 #undef UNK
 #define UNK  printf("%s: Unknown thermometer message %c %c %c %c\n", datebuf, p[0], p[1], p[2], p[3]); return 1;
 	uint16_t value;
-	int16_t temperature;
+	float temperature;
 	int temperature_error = 0;
 	float volt, level;
 	const char *location = "";
@@ -251,15 +272,12 @@ static int therm_message(uint8_t *p)
 			mqtt_publish_fmt(topic, "%d", (int)(100*level));
 			break;
 		case 'T':
-			temperature = p[2] << 8 | p[3];
-			if (temperature == (int16_t)0xFFFF) {
-				temperature_error = 1;
-			}
-			printf("%s: Thermometer %s temperature: %.1f�C\n", datebuf, location, temperature/16.0f);
+			temperature_error = process_temperature_16ths(p[2], p[3], &temperature);
+			printf("%s: Thermometer %s temperature: %.1f°C\n", datebuf, location, temperature);
 			if (!temperature_error) {
 				char topic[256];
 				snprintf(topic, 255, "%s_thermometer/temperature", location);
-				mqtt_publish_fmt(topic, "%.1f", temperature/16.0f);
+				mqtt_publish_fmt(topic, "%.1f", temperature);
 			}
 			break;
 		case 'F':
@@ -390,6 +408,108 @@ static int linky_message(uint8_t *p)
 	return 1;
 }
 
+static int pool_cover_message(uint8_t *p)
+{
+	// Pool cover RF24 protocol:
+	// 
+	// RF24 -> Cover (commands):
+	//   see above in on_mqtt_message()
+	//
+	// Cover -> RF24 (status/data reporting):	
+	//   p[0] = 'V' - Battery voltage
+	//     p[1:2]: uint16_t in mV, little-endian
+	//     p[3] unused
+	//   p[0] = 'S' - Solar voltage
+	//     p[1:2]: uint16_t in mV, little-endian
+	//     p[3] unused
+	//   p[0] = 'I' - Battery current	
+	//     p[1:2]: int16_t in mA, little-endian
+	//     p[3] unused
+	//   p[0] = 'E' - Encoder position
+	//     p[1:3]: uint24_t in number of turns, little-endian
+	//   p[0] = 'T' - Motor temperature
+	//     p[1]: unused
+	//     p[2:3]: int16_t in 1/16°C, big-endian (same as thermometers)
+	//   p[0] = 'Q' - Status
+	//     p[1]: 'U'=Up, 'D'=Down, 'S'=Stopped
+	//     p[2:3] unused
+	//
+	char topic[128];
+	char payload[64];
+	switch (p[0]) {
+		case 'V': { // Battery voltage
+			uint16_t voltage = p[1] | (p[2] << 8);
+			snprintf(topic, sizeof(topic), "pool_cover/battery_voltage");
+			snprintf(payload, sizeof(payload), "%u", voltage);
+			mqtt_publish_fmt(topic, "%s", payload);
+			break;
+		}
+		case 'S': { // Solar voltage
+			uint16_t voltage = p[1] | (p[2] << 8);
+			snprintf(topic, sizeof(topic), "pool_cover/solar_voltage");
+			snprintf(payload, sizeof(payload), "%u", voltage);
+			mqtt_publish_fmt(topic, "%s", payload);
+			break;
+		}
+		case 'P': { // Battery power (signed)
+			int16_t power = p[1] | (p[2] << 8);
+			snprintf(topic, sizeof(topic), "pool_cover/battery_power");
+			snprintf(payload, sizeof(payload), "%d", power);
+			mqtt_publish_fmt(topic, "%s", payload);
+			break;
+		}
+		case 'I': { // Battery current (signed)
+			int16_t current = p[1] | (p[2] << 8);
+			snprintf(topic, sizeof(topic), "pool_cover/battery_current");
+			snprintf(payload, sizeof(payload), "%d", current);
+			mqtt_publish_fmt(topic, "%s", payload);
+			break;
+		}
+		case 'E': { // Encoder position (signed)
+			int32_t pos = p[1] | (p[2] << 8) | (p[3] << 16);
+			// Sign-extend from 24 bits to 32 bits if necessary
+			if (pos & 0x800000) {
+				pos |= 0xFF000000;
+			}
+			snprintf(topic, sizeof(topic), "pool_cover/encoder_position");
+			snprintf(payload, sizeof(payload), "%d", pos);
+			mqtt_publish_fmt(topic, "%s", payload);
+			break;
+		}
+		case 'T': { // Motor temperature
+			float motor_temperature;
+			int temperature_error = process_temperature_16ths(p[2], p[3], &motor_temperature);
+			if (!temperature_error) {
+				snprintf(topic, sizeof(topic), "pool_cover/motor_temperature");
+				snprintf(payload, sizeof(payload), "%.1f", motor_temperature);
+				mqtt_publish_fmt(topic, "%s", payload);
+			}
+			break;
+		}
+		case 'Q': { // Status
+			char status = p[1];
+			const char *status_str;
+			switch (status) {
+				case 'U': status_str = "going_up"; break;
+				case 'D': status_str = "going_down"; break;
+				case 'S': status_str = "stopped"; break;
+                case 'b': status_str = "booting"; break;
+				default: status_str = "unknown"; break;
+			}
+			snprintf(topic, sizeof(topic), "pool_cover/status");
+			snprintf(payload, sizeof(payload), "%s", status_str);
+			mqtt_publish_fmt(topic, "%s", payload);
+			break;
+		}
+		default:
+			fprintf(stderr, "pool_cover: unknown message %c %c %c %c\n", p[0], p[1], p[2], p[3]);
+			return 1;
+	}
+		return 0;
+
+	return 0;
+}
+
 
 int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4]) 
 {
@@ -401,6 +521,8 @@ int handle_rf24_cmd(uint8_t pipe_id, uint8_t data[4])
 
 	int error = 0;
 	switch (pipe_id) {
+		case PIPE_POOL_COVER:
+			return pool_cover_message(data);
 		case PIPE_THERMOMETER_ID:
 			return therm_message(data);
 		case PIPE_LINKY_ID:
